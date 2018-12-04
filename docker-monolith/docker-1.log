@@ -1,0 +1,4 @@
+REPOSITORY                  TAG                 IMAGE ID            CREATED             SIZE
+my-docker/ubuntu-tmp-file   latest              0ac4cc36d7e7        47 seconds ago      116MB
+ubuntu                      16.04               a51debf7e1eb        2 weeks ago         116MB
+hello-world                 latest              4ab4c602aa5e        2 months ago        1.84kB
