@@ -47,9 +47,10 @@ docker run hello-world
 ```
 $ sudo docker ps
 
-CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+CONTAINER ID  IMAGE   COMMAND    CREATED   STATUS    PORTS       NAMES
 ```
 Список всех кнтейнеров
+```
 $ docker ps 
 
 CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS                     PORTS               NAMES
