@@ -39,6 +39,7 @@ sudo apt update
 ```bash
 $ sudo apt install docker-ce=17.06.2~ce-0~debian
 ```
+
 Запустим первый контейнер.
 ```bash
 docker run hello-world
@@ -49,7 +50,7 @@ $ sudo docker ps
 
 CONTAINER ID  IMAGE   COMMAND    CREATED   STATUS    PORTS       NAMES
 ```
-Список всех кнтейнеров
+Список всех контейнеров
 ```
 $ docker ps 
 
@@ -57,5 +58,54 @@ CONTAINER ID        IMAGE               COMMAND             CREATED             
 8ea689d42d82        ubuntu:16.04        "/bin/bash"         4 hours ago         Exited (1) 4 hours ago                         kind_merkle
 7639619723b9        ubuntu:16.04        "/bin/bash"         4 hours ago         Exited (137) 3 hours ago                       kind_cohen
 68c1fd6f7647        hello-world         "/hello"            4 hours ago         Exited (0) 4 hours ago                         jovial_kare
-2730ef4b4ee5        hello-world         "/hello"            5 hours ago         Exited (0) 5 hours ago                         awesome_bassi
 ```
+Список сохраненных образов
+```
+$ docker images 
+
+REPOSITORY                  TAG                 IMAGE ID            CREATED             SIZE
+my-docker/ubuntu-tmp-file   latest              0ac4cc36d7e7        25 hours ago        116MB
+ubuntu                      16.04               a51debf7e1eb        2 weeks ago         116MB
+hello-world                 latest              4ab4c602aa5e        2 months ago        1.84kB
+```
+Docker run  каждый раз запускает новый контейнер. Если не указывать флаг --rm при запуске docker run,
+то после остановки контейнер в месте с содержимым остается на диске.
+```
+docker ps -a --format "table {{.ID}}\t{{.Image}}\t{{.CreateAt}}\t{{.Names}}"
+ 
+CONTAINER ID        IMAGE               CREATED AT                      NAMES
+8ea689d42d82        ubuntu:16.04        2018-12-04 14:04:03 +0300 MSK   kind_merkle
+7639619723b9        ubuntu:16.04        2018-12-04 14:02:25 +0300 MSK   kind_cohen
+68c1fd6f7647        hello-world         2018-12-04 13:59:12 +0300 MSK   jovial_kare
+```
+Запуск нового процесса внутри контейнера например bash
+start  запускает  уже созданный контейнер
+attach подсоединяет  терминал  к созданному контейнеру
+```
+docker start 8ea689d42d82
+
+docker attach 8ea689d42d8
+ENTER
+
+docker ps
+
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+8ea689d42d82        ubuntu:16.04        "/bin/bash"         2 days ago          Up 4 minutes                            kind_merkle
+
+```
+Запускаем новый процесс внутри контейнера
+
+```
+docker exec -it  8ea689d42d82 bash
+```
+Docker commit создает image из  контенера, контейнер при этом остается запущенным.
+```
+
+sha256:839f6a935c85d9ff8bbbe668fc872b908bafccf25abc1d64e297da58961b3551
+
+docker images
+REPOSITORY                  TAG                 IMAGE ID            CREATED             SIZE
+my-docker/ubuntu-tmp-file   latest              0ac4cc36d7e7        2 days ago          116MB
+ubuntu                      16.04               a51debf7e1eb        2 weeks ago         116MB
+hello-world                 latest              4ab4c602aa5e        2 months ago        1.84kB
+
