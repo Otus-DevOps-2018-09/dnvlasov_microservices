@@ -109,3 +109,112 @@ my-docker/ubuntu-tmp-file   latest              0ac4cc36d7e7        2 days ago  
 ubuntu                      16.04               a51debf7e1eb        2 weeks ago         116MB
 hello-world                 latest              4ab4c602aa5e        2 months ago        1.84kB
 
+### ДЗ №13
+
+- Создаём  новый проект  в GCP с названем docker
+- Создаем новый конфигурационный файл командой
+```bash
+gcloud init
+```
+Создаем аунтификационные данные для доступа к пиложению
+```bash
+gcloud auth application-default login
+```
+Создаем скрипт для создания docker-machine 
+```bash
+#!/bin/bash
+export GOOGLE_PROJECT=docker-XXXXXX
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-zone europe-west1-b \
+docker-host
+```
+После запускаем и рпроверяем что Docker успешно запустился
+```bash
+$bash docker.machine.up
+$docker-machine ls
+
+NAME          ACTIVE   DRIVER   STATE     URL                        SWARM   DOCKER     ERRORS
+docker-host   -        google   Running   tcp://222.222.222.222:2376           v18.09.0   
+```
+И переключаемся на него
+```bash
+eval $(docker-machine env docker-host)
+```
+Для дальнейшей работы нужно создать следующие файлы
+- Dockerfile - текстовое описание нашего образа
+- mongod.conf - подготовленный конфиг для mongodb
+- db_config - содержит переменную окружения со ссылкой на mongodb
+- start.sh - скрипт запуска приложения
+Вся работа происходит в папке docker-monolith
+```vim
+mongodb.conf
+
+# Where and how to store data.
+storage:
+  dbPath: /var/lib/mongodb
+  journal:
+    enabled: true
+
+# where to write logging data.
+systemLog:
+  destination: file
+  logAppend: true
+  path: /var/log/mongodb/mongod.log
+
+# network interfaces
+net:
+  port: 27017
+  bindIp: 127.0.0.1
+ 
+start.sh
+
+#!/bin/bash
+
+/usr/bin/mongod --fork --logpath /var/log/mongod.log --config /etc/mongodb.conf
+
+source /reddit/db_config
+
+cd /reddit && puma || exit
+
+db_config
+
+DATABASE_URL=127.0.0.1
+```
+Создадим образ приложения ubuntu 16.04
+```vim
+
+FROM ubuntu:16.04
+
+RUN apt-get update
+RUN apt-get install -y mongodb-server ruby-full ruby-dev build-essential git
+RUN gem install bundler
+RUN git clone -b monolith https://github.com/express42/reddit.git
+
+COPY mongod.conf /etc/mongod.conf
+COPY db_config /reddit/db_config
+COPY start.sh /start.sh
+
+RUN cd /reddit && bundle install
+RUN chmod 0777 /start.sh
+
+CMD ["/start.sh"]
+```
+Выполним команду
+```bash
+$ docker build -t reddit:latest .
+
+```
+Теперь  запустим наш контейнер
+```
+$ docker run --name reddit -d --network=host reddit:latest
+```
+Проверим результат 
+```
+$ docker-machine ls
+
+NAME        ACTIVE   DRIVER   STATE     URL                        SWARM   DOCKER     ERRORS
+docker-host   -        google   Running   tcp://222.222.222.222:2376       v17.09.0-ce
+```
+   
