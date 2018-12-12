@@ -108,7 +108,7 @@ REPOSITORY                  TAG                 IMAGE ID            CREATED     
 my-docker/ubuntu-tmp-file   latest              0ac4cc36d7e7        2 days ago          116MB
 ubuntu                      16.04               a51debf7e1eb        2 weeks ago         116MB
 hello-world                 latest              4ab4c602aa5e        2 months ago        1.84kB
-
+```
 ### ДЗ №13
 
 - Создаём  новый проект  в GCP с названем docker
@@ -201,7 +201,7 @@ RUN chmod 0777 /start.sh
 
 CMD ["/start.sh"]
 ```
-Выполним команду
+Выполним сборку образа
 ```bash
 $ docker build -t reddit:latest .
 
@@ -217,4 +217,131 @@ $ docker-machine ls
 NAME        ACTIVE   DRIVER   STATE     URL                        SWARM   DOCKER     ERRORS
 docker-host   -        google   Running   tcp://222.222.222.222:2376       v17.09.0-ce
 ```
-   
+Разрешим входящий TCP-трафик  на порт 9292 выполнив команду
+
+``
+gcloud compute firewall-rules create reddit-app \
+ --allow tcp:9292 \
+ --target-tags=docker-machine \
+ --description="Allow PUMA connections" \
+ --direction=INGRESS
+```
+Загрузим образ на docker hub
+```
+docker login
+docker tag reddit:latest login/otus-reddit:1.0 
+docker push login/otus-reddit:1.0
+```
+И еще проверка
+```
+docker inspect <your-login>/otus-reddit:1.0
+
+[
+    {
+        "Id": "sha256:05b2cb5a01083e2de7693d151285d0b37f784f3d0143a9fca56c279944a64c91",
+        "RepoTags": [
+            "reddit:latest",
+            "verty/otus-reddit:1.0"
+        ],
+        "RepoDigests": [
+            "verty/otus-reddit@sha256:c867984622cda30f7d03bf0d13d7f431765861cf1b897e9ab53c7d5a444e7aed"
+        ],
+        "Parent": "sha256:ca8af415e9713a12f1c6ae21cabfcca690d5b9aacd89ec142678af893eac3642",
+        "Comment": "",
+        "Created": "2018-12-08T12:03:46.409836381Z",
+        "Container": "3c9ee932cc71abbf89e760d5ed7a1474958490c05dbda6a8c795f565bef40cd6",
+        "ContainerConfig": {
+            "Hostname": "3c9ee932cc71",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/bin/sh",
+                "-c",
+                "#(nop) ",
+                "CMD [\"/start.sh\"]"
+            ],
+            "ArgsEscaped": true,
+            "Image": "sha256:ca8af415e9713a12f1c6ae21cabfcca690d5b9aacd89ec142678af893eac3642",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": {}
+        },
+        "DockerVersion": "18.09.0",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/start.sh"
+            ],
+            "ArgsEscaped": true,
+            "Image": "sha256:ca8af415e9713a12f1c6ae21cabfcca690d5b9aacd89ec142678af893eac3642",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 681077551,
+        "VirtualSize": 681077551,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/4da0e10e48eafc9f44ac4165578c4a6d285b8e94c5de9a72f48c95a4d66a4b12/diff:/var/lib/docker/overlay2/0d78366f3c5bdee9d1847250e501d2893c6356397143672723714b3a7f1c20ba/diff:/var/lib/docker/overlay2/7de0c82195a605e8e4ab4f4cc92f1f54aad3914a07b85efce02195fec648029d/diff:/var/lib/docker/overlay2/bb7a269f4456258522a33d889eeacf873c5a59f12a1efd25137a09a33cdff22c/diff:/var/lib/docker/overlay2/e5e62bfbb09afc72daba59178ceda8e8bc6b6ba35c2bfa27ed3b559919908603/diff:/var/lib/docker/overlay2/402e1798479db11ae552517f0dde3bed2ebc1c9a9093027bb3bb160335d44935/diff:/var/lib/docker/overlay2/8d69fb56ca3872a0b72b767adc5202174c6c9a7a68220d7ddd8c85c02387f24f/diff:/var/lib/docker/overlay2/701695213c9aebe88f2f003b2678359175ca1108cff6494b939d6d06a4f72fde/diff:/var/lib/docker/overlay2/715ca389e78c8809c070e0d6af18e65e79e205171e5db0a3d0db0cf2f89030e9/diff:/var/lib/docker/overlay2/cb8e26649a1cbdf0ec4f83f19f0fdff7386eff4bd9b634df69676ee983e5760b/diff:/var/lib/docker/overlay2/c93817764554a5a98c739701be797d24c7a5bb20a122d1f79233a39ebcc5fd63/diff:/var/lib/docker/overlay2/5a2e1cb34bc0d3701c5ad95b50539f278916baf248cd9a691556c1734a535b53/diff",
+                "MergedDir": "/var/lib/docker/overlay2/ead4f7b20e6815b14c7be7389358cb191041c64f7b16b4a7456fbfe9f874c3af/merged",
+                "UpperDir": "/var/lib/docker/overlay2/ead4f7b20e6815b14c7be7389358cb191041c64f7b16b4a7456fbfe9f874c3af/diff",
+                "WorkDir": "/var/lib/docker/overlay2/ead4f7b20e6815b14c7be7389358cb191041c64f7b16b4a7456fbfe9f874c3af/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:41c002c8a6fd36397892dc6dc36813aaa1be3298be4de93e4fe1f40b9c358d99",
+                "sha256:647265b9d8bc572a858ab25a300c07c0567c9124390fd91935430bf947ee5c2a",
+                "sha256:819a824caf709f224c414a56a2fa0240ea15797ee180e73abe4ad63d3806cae5",
+                "sha256:3db5746c911ad8c3398a6b72aa30580b25b6edb130a148beed4d405d9c345a29",
+                "sha256:9a4bc08cbc6aa6710d48343231853e47fc6e5fc16c6d901629d29540e6056a50",
+                "sha256:6c2c6a379303cdb7a00f2175d163cd626fe537e6c77e1d23c2b6ac813a9e992b",
+                "sha256:298d1d015927df78a17f6be9ce732e714096fb360f1ffec8e6677131d0b405c5",
+                "sha256:2cea5f58ac5fa068a2deee03a22990abca4b54f595b05cecd1a7155913157f89",
+                "sha256:e5532dac33bcaa71f178a2b4a5051630e5dd25d3df3de1c9a34f6914c7280010",
+                "sha256:8825a868bcb118c35703eb3139a4b531e9f0dc83f0ae7e507d8838697c12c27c",
+                "sha256:6efbada0efe2e0f262de308758bd58379e9ae85fdf555ca2fe5c6d2546680c37",
+                "sha256:9900fb8186201e327dfc6dd08da85c419762377780a737748b664998d4659275",
+                "sha256:fd6d299e2682fb2adae33b352f9a6f0c296aa323585a453063bb40fb8b4f2e59"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2018-12-08T17:24:56.840982562+03:00"
+        }
+    }
+]
+```
+```
+docker inspect <your-login>/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}' 
+
+[/bin/sh -c #(nop)  CMD ["/start.sh"]]
+``
