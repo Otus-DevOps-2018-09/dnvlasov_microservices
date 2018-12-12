@@ -339,7 +339,8 @@ docker inspect <your-login>/otus-reddit:1.0
         }
     }
 ]
-
+```
+```bash
 docker inspect <your-login>/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}' 
 
 [/bin/sh -c #(nop)  CMD ["/start.sh"]]
