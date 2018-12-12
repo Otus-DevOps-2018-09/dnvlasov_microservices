@@ -219,7 +219,7 @@ docker-host   -        google   Running   tcp://222.222.222.222:2376       v17.0
 ```
 Разрешим входящий TCP-трафик  на порт 9292 выполнив команду
 
-``
+``` bash
 gcloud compute firewall-rules create reddit-app \
  --allow tcp:9292 \
  --target-tags=docker-machine \
@@ -233,7 +233,7 @@ docker tag reddit:latest login/otus-reddit:1.0
 docker push login/otus-reddit:1.0
 ```
 И еще проверка
-```
+```json
 docker inspect <your-login>/otus-reddit:1.0
 
 [
@@ -339,9 +339,8 @@ docker inspect <your-login>/otus-reddit:1.0
         }
     }
 ]
-```
-```
+
 docker inspect <your-login>/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}' 
 
 [/bin/sh -c #(nop)  CMD ["/start.sh"]]
-``
+```
