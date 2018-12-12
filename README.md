@@ -116,7 +116,7 @@ hello-world                 latest              4ab4c602aa5e        2 months ago
 ```bash
 gcloud init
 ```
-Создаем аунтификационные данные для доступа к пиложению
+Создаем аутентификационные данные для доступа к приложению
 ```bash
 gcloud auth application-default login
 ```
@@ -130,7 +130,7 @@ docker-machine create --driver google \
 --google-zone europe-west1-b \
 docker-host
 ```
-После запускаем и рпроверяем что Docker успешно запустился
+После запускаем и проверяем что Docker успешно запустился
 ```bash
 $bash docker.machine.up
 $docker-machine ls
@@ -147,7 +147,7 @@ eval $(docker-machine env docker-host)
 - mongod.conf - подготовленный конфиг для mongodb
 - db_config - содержит переменную окружения со ссылкой на mongodb
 - start.sh - скрипт запуска приложения
-Вся работа происходит в папке docker-monolith
+Вся работа происходят в папке docker-monolith
 ```vim
 mongodb.conf
 
@@ -241,10 +241,10 @@ docker inspect <your-login>/otus-reddit:1.0
         "Id": "sha256:05b2cb5a01083e2de7693d151285d0b37f784f3d0143a9fca56c279944a64c91",
         "RepoTags": [
             "reddit:latest",
-            "verty/otus-reddit:1.0"
+            "login/otus-reddit:1.0"
         ],
         "RepoDigests": [
-            "verty/otus-reddit@sha256:c867984622cda30f7d03bf0d13d7f431765861cf1b897e9ab53c7d5a444e7aed"
+            "login/otus-reddit@sha256:c867984622cda30f7d03bf0d13d7f431765861cf1b897e9ab53c7d5a444e7aed"
         ],
         "Parent": "sha256:ca8af415e9713a12f1c6ae21cabfcca690d5b9aacd89ec142678af893eac3642",
         "Comment": "",
