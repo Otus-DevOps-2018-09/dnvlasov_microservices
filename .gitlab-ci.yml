@@ -3,7 +3,7 @@ image: ruby:2.4.2
 stages:
    - build
    - test
-   - deploy
+   - review
 variables:
         DATABASE_URL: 'mongo_db://mongo/user_posts'
 before_script:
@@ -23,10 +23,6 @@ test_integration_job:
         stage: test
         script:
           - echo 'Testing 2'
-deploy_job:
-     stage: deploy
-     script:
-         - echo 'Deploy'
 
 deploy_dev_job:
    stage: review
