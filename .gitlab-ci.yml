@@ -60,6 +60,6 @@ production:
         - /^\d+\.\d+\.\d+/
      script:
              - echo 'Deploy'
-     envinroment:     
+     environment:     
          name: production
          url: https://example.com     
