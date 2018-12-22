@@ -108,7 +108,7 @@ REPOSITORY                  TAG                 IMAGE ID            CREATED     
 my-docker/ubuntu-tmp-file   latest              0ac4cc36d7e7        2 days ago          116MB
 ubuntu                      16.04               a51debf7e1eb        2 weeks ago         116MB
 hello-world                 latest              4ab4c602aa5e        2 months ago        1.84kB
-```
+````
 ### ДЗ №13
 
 - Создаём  новый проект  в GCP с названем docker
@@ -345,3 +345,187 @@ docker inspect <your-login>/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}'
 
 [/bin/sh -c #(nop)  CMD ["/start.sh"]]
 ```
+
+### ДЗ №14
+#### Docker-образы Мкросервисы
+Подключаемся к Docker host
+```bash
+NAME          ACTIVE   DRIVER   STATE     URL                        SWARM   DOCKER     ERRORS
+docker-host     -        google   Running   tcp://35.240.74.230:2376           v18.09.0   
+eval $(docker-machine env docker-host)
+```
+Скачаем zip архив и распакуем его содержимое внутрь  репозитория,
+В нутри  репозитория у нас появиться каталог reddit-microervices переменуем его в `src`
+Теперь наше приложение состоит из трех компонентов
+- `post-py` - сервис отвечающий за написание постов
+- `comment` - сервис отвечающий за написание коменрариев
+- `ui`      - веб-интерфейс, работающий с другими сервисами
+
+Создадим файл ./post-py/Dockerfile
+
+```docker
+FROM python:3.6.0-alpine
+
+WORKDIR /app
+ADD . /app
+
+RUN pip install -r /app/requirements.txt
+
+ENV POST_DATABASE_HOST post_db
+ENV POST_DATABASE posts
+
+ENTRYPOINT ["python3", "post_app.py"]
+```
+./comment/Dockerfile
+```docker
+
+FROM ruby:2.2
+RUN apt-get update -qq && apt-get install -y build-essential
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+WORKDIR $APP_HOME
+
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
+
+ENV COMMENT_DATABASE_HOST comment_db
+ENV COMMENT_DATABASE comments
+
+CMD ["puma"]
+```
+./ui/Dockerfile
+```docker
+
+FROM ruby:2.2 
+RUN apt-get update -qq \
+    && apt-get install -y  build-essential 
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+
+CMD ["puma"]
+```
+Скачаем последний образ MongoDB:
+```bash
+docker pull mongo:latest
+```
+Соберем  образы с нашими сервисами:
+```bash
+docker build -t login/post:1.0 ./post-py
+docker build -t login/comment:1.0 ./comment
+docker build -t login/ui:1.0 ./ui
+```
+Cозздадим специальную сеть для приложения
+```
+docker network create reddit
+```
+Запустим наши контейнеры
+```bash
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:laest
+docker run -d --network=reddit --network-alias=post login-dockerhub/post:1.0
+docker run -d --network=reddit --network-alias=post login-dockerhub/comment:1.0
+docker run -d --network=reddit -p 9292:9292 login-dockerhub/ui:1.0
+```
+Что было сделанно.
+- Создана bridge-сеть для контейнеров
+- Запустили контейнеры в этой сети
+- Добавили сетевые алиасы контейнерам
+#### Образы приложения
+Образы преложения ранимают много места для одного приложения
+
+```
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+verty/ui            1.0                 94ba693f3bcf        8 days ago          781MB
+verty/comment       1.0                 a2f2b084ff87        8 days ago          773MB
+verty/post          1.0                 f524ee9a94a2        8 days ago          102MB
+mongo               latest              525bd2016729        4 weeks ago         383MB
+ubuntu              16.04               a51debf7e1eb        4 weeks ago         116MB
+ruby                2.2                 6c8e6f9667b2        7 months ago        715MB
+python              3.6.0-alpine        cb178ebbf0f2        21 months ago       88.6MB
+```
+- Улучшаем  образ сервиса ui
+поменяем содержимое ./ui/Dockerfile
+```docker
+FROM ubuntu:16.04 
+RUN apt-get update  \
+    && apt-get install -y ruby-full ruby-dev build-essential \
+    && gem install bundler --no-ri --rdoc 
+
+ENV APP_HOME /app
+RUN mkdir $APP_HOME
+
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
+
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
+
+CMD ["puma"]
+```
+Пересоберем ui  `docker build -t login/ui:2.0 ./ui`
+
+```
+
+POSITORY          TAG                 IMAGE ID            CREATED             SIZE
+ui                2.0                 f17bd1160df4        6 minutes ago       455MB
+ui                1.0                 94ba693f3bcf        9 days ago          781MB
+comment           1.0                 a2f2b084ff87        9 days ago          773MB
+post-py           1.0                 f524ee9a94a2        9 days ago          102MB
+mongo             latest              525bd2016729        4 weeks ago         383MB
+ubuntu            16.04               a51debf7e1eb        4 weeks ago         116MB
+ruby              2.2                 6c8e6f9667b2        7 months ago        715MB
+python            3.6.0-alpine        cb178ebbf0f2        21 months ago       88.6MB
+```
+
+#### Перезапуск приложения
+Выключим старые  копии контейнеров
+```
+docker kill $(docker ps -q)
+```
+Запустим новые копии контейнеров.
+```
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
+docker run -d --network=reddit --network-alias=post dockerhub-login/post:1.0
+docker run -d --network=reddit --network-alias=comment dockerhub-login/comment:1.0
+docker run -d --network=reddit -p 9292:9292 dockerhub-login/ui:2.0
+```
+Проверим на http://ip_docker_host:9292. Ранее созданный пост пропал 
+вместе с остановкой контейнера mongo.
+- Создадим Docker volume:
+```
+$ docker volume create reddit_db
+```
+И подключим его к контейнеру с MongoDB.
+
+Выключим старые копии контейнеров:
+``
+docker kill $(docker ps -q)
+```
+Запустим новые копии контейнеров:
+```
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+docker run -d --network=reddit --network-alias=post dockerhub-login/post:1.0
+docker run -d --network=reddit --network-alias=comment dockerhub-login/comment:1.0
+docker run -d --network=reddit -p 9292:9292 dockerhub-login/ui:2.0 
+```
+- Заходим на http://ip_docker_host:9292
+- Пишем пост
+- Перезапустим контейнеры bash docker-conteiner_restart
+- Проверяем наличие поста
+ 
