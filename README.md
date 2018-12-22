@@ -514,7 +514,7 @@ $ docker volume create reddit_db
 И подключим его к контейнеру с MongoDB.
 
 Выключим старые копии контейнеров:
-``
+```
 docker kill $(docker ps -q)
 ```
 Запустим новые копии контейнеров:
