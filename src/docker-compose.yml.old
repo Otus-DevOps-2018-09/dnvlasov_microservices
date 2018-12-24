@@ -2,32 +2,35 @@ version: '3.3'
 services:
   post_db:
     container_name: post_db     
-    image: mongo:3.2
+    image: "mongo:${MONGO}"
     volumes:
       - post_db:/data/db
     networks:
-      - reddit
+      - back_net
   ui:
     build: ./ui
     container_name: ui
-    image: ${USERNAME}/ui:1.0
+    image: "${USERNAME}/ui:${UI}"
     ports: 
-      - 9292:9292/tcp
+      - ${NETWORK}
     networks:
-      - reddit
+      - front_net
   post:
     build: ./post-py
     container_name: post-py
-    image: ${USERNAME}/post:1.0
+    image: "${USERNAME}/post:${POST}"
     networks:
-     - reddit 
+      - back_net
+      - front_net  
   comment:
     build: ./comment
     container_name: comment
-    image: ${USERNAME}/comment:1.0
+    image: "${USERNAME}/comment:${COMMENT}"
     networks:
-      - reddit
+      - back_net
+      - front_net
 volumes:
   post_db:
 networks:
-  reddit:
+  front_net:
+  back_net:        
