@@ -696,11 +696,11 @@ networks:
 docker kill $(docker ps -q)
 ```
 Экспортируем переменную USERNAME и запустим docker-compose
-```
+```bash
 export USERNAME=<your-login>
 docker-compose up -d
 docker-compose ps
-```bash
+
 
     Name                  Command             State           Ports         
 ----------------------------------------------------------------------------
