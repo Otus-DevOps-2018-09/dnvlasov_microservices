@@ -700,3 +700,59 @@ docker kill $(docker ps -q)
 export USERNAME=<your-login>
 docker-compose up -d
 docker-compose ps
+```bash
+
+    Name                  Command             State           Ports         
+----------------------------------------------------------------------------
+src_comment_1   puma                          Up                            
+src_post_1      python3 post_app.py           Up                            
+src_post_db_1   docker-entrypoint.sh mongod   Up      27017/tcp             
+src_ui_1        puma                          Up      0.0.0.0:9292->9292/tcp
+```
+Заходим на http://ip_docker_machine:9292 работает корректно.
+
+- Изменеие docker-compose под кейс с множеством сетей, сетевых алисов.
+- Параметризация с помощью переменных окруженийЖ
+  - порт публикации сервиса ui
+  - версия сервисов
+  - Параметризованные параметры запишите в отдельный файл c расширением .env
+- Сущности docker-compose можно изменить параметром containers_name
+
+```yml
+version: '3.3'
+services:
+  post_db:
+    container_name: post_db     
+    image: "mongo:${MONGO}"
+    volumes:
+      - post_db:/data/db
+    networks:
+      - back_net
+  ui:
+    build: ./ui
+    container_name: ui
+    image: "${USERNAME}/ui:${UI}"
+    ports: 
+      - ${NETWORK}
+    networks:
+      - front_net
+  post:
+    build: ./post-py
+    container_name: post-py
+    image: "${USERNAME}/post:${POST}"
+    networks:
+      - back_net
+      - front_net  
+  comment:
+    build: ./comment
+    container_name: comment
+    image: "${USERNAME}/comment:${COMMENT}"
+    networks:
+      - back_net
+      - front_net
+volumes:
+  post_db:
+networks:
+  front_net:
+  back_net:
+```   

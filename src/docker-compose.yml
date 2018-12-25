@@ -1,7 +1,6 @@
 version: '3.3'
 services:
   post_db:
-    container_name: post_db     
     image: mongo:3.2
     volumes:
       - post_db:/data/db
@@ -9,25 +8,22 @@ services:
       - reddit
   ui:
     build: ./ui
-    container_name: ui
-    image: ${USERNAME}/ui:1.0
+    image: "${USERNAME}/ui:1.0"
     ports: 
       - 9292:9292/tcp
     networks:
       - reddit
   post:
     build: ./post-py
-    container_name: post-py
     image: ${USERNAME}/post:1.0
     networks:
-     - reddit 
+      - reddit  
   comment:
     build: ./comment
-    container_name: comment
     image: ${USERNAME}/comment:1.0
     networks:
       - reddit
 volumes:
   post_db:
 networks:
-  reddit:
+  reddit:      
