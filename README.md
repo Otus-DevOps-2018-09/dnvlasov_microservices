@@ -108,7 +108,7 @@ REPOSITORY                  TAG                 IMAGE ID            CREATED     
 my-docker/ubuntu-tmp-file   latest              0ac4cc36d7e7        2 days ago          116MB
 ubuntu                      16.04               a51debf7e1eb        2 weeks ago         116MB
 hello-world                 latest              4ab4c602aa5e        2 months ago        1.84kB
-````
+```
 ### ДЗ №13
 
 - Создаём  новый проект  в GCP с названем docker
@@ -340,7 +340,7 @@ docker inspect <your-login>/otus-reddit:1.0
     }
 ]
 ```
-```bash
+```bash 
 docker inspect <your-login>/otus-reddit:1.0 -f '{{.ContainerConfig.Cmd}}' 
 
 [/bin/sh -c #(nop)  CMD ["/start.sh"]]
@@ -529,3 +529,230 @@ docker run -d --network=reddit -p 9292:9292 dockerhub-login/ui:2.0
 - Перезапустим контейнеры bash docker-conteiner_restart
 - Проверяем наличие поста
  
+
+
+### ДЗ №15
+#### Работа с сетью  в Docker
+Создадим bridge-сеть в docker
+```bash
+docker network create reddit --driver bridge
+```
+Запустим наш проект reddit с использованием bridge-сети.
+```bash
+docker run -d --network=reddit mongo:latest
+docker run -d --network=reddit dockerhub-login/post:1.0
+docker run -d --network=reddit dockerhub-login/comment:1.0
+docker run -d --network-reddit -p 9292:9292 dockerhub-login/ui:1.0
+```
+При просмотре  web по ip:9292 будет возникать ошибка 
+"Can't show blog posts, some problems with the post service. Refresh?"
+Для решения необходимо присвоение имени контейнерам
+--name <name> (можно задать только 1 имя)
+--network-alias <alias-name> (можно задать множество алиасов)
+Остановим старые копии контейнеров
+```bash
+docker kill $(docker ps -q)
+```
+Запустим новые.
+```
+docker run -d --network=reddit --network-alias=post_db --network-alias=coment_db mongo:latest
+docker run -d --network=reddit --network-alias=post login/post:1.0
+docker run -d --network=reddit --network-alias=comment login/comment:1.0
+docker rnn -d --network=reddit -p 9292:9292 login/ui:1.0
+```
+Проверим что предупреждение об ошибке пропала.
+
+#### Запуск проекта в 2-х bridge сетях.
+  
+Запустим проект в 2-х bridge сетях. Так, чтобы сервис ui не имел доступа к базе данных
+в соответствии со схемой.
+
+ front_net             back_net
+   ui        comment      db
+               post 
+
+
+Остановим старые копии контейнеров
+```bash 
+docker kill $(docker ps -q)
+```
+Создадим docker-сети
+```bash
+docker network create back_net --subnet=10.0.2.0/24
+docker network create front_net --subnet=10.0.1.0/24
+```
+Запустим контейнеры
+```bash
+docker run --network=front_net -p 9292:9292 --name ui login/ui:1.0
+docker run --network=back_net --name comment login/comment:1.0
+docker run --network=back_net --name post login/post:1.0
+docker run --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:latest
+```
+Контейнеры post и comment нужно поместить в обе сети
+командой docker network connect подключим ко второй сети
+```bash
+docker network connect front_net post
+docker network connect front_net comment
+```
+Зайдем на web по ip_address:9292 проверим что все работает без ошибок.
+#### Сетевой стек схемы.
+Заходим по ssh на docker-host и установим пакет bridge-utils  
+```bash
+docker-machine ssh docker-host
+sudo apt-get update && sudo apt-get install bridge-utils
+```
+Выполним
+```bash
+docker network ls
+```
+Находим ID сетей созданных в рамках проекта.
+```bash
+ifconfig | grep br
+br-30d790cce3d1 Link encap:Ethernet  HWaddr 02:42:f8:73:78:61
+br-870ad93a7408 Link encap:Ethernet  HWaddr 02:42:cb:6b:ad:9f
+br-dc9ad54119fe Link encap:Ethernet  HWaddr 02:42:df:f0:85:38
+
+brctl show br-30d790cce3d1
+bridge name     bridge id               STP enabled     interfaces
+br-30d790cce3d1         8000.0242f8737861       no              veth4c9d2ae
+                                                        veth8815442
+                                                        vethd0e7d04
+
+brctl show br-870ad93a7408
+bridge name     bridge id               STP enabled     interfaces
+br-870ad93a7408         8000.0242cb6bad9f       no              vetha8392b3
+                                                        vethaa4417a
+                                                        vethffde6e7
+
+bridge name     bridge id               STP enabled     interfaces
+br-dc9ad54119fe         8000.0242dff08538       no
+```
+Цепочка iptables  POSTROUTING (policy ACCEPT)
+```bash
+Chain POSTROUTING (policy ACCEPT)
+target     prot opt source               destination
+MASQUERADE  all  --  10.0.1.0/24          0.0.0.0/0
+MASQUERADE  all  --  10.0.2.0/24          0.0.0.0/0
+MASQUERADE  all  --  172.17.0.0/16        0.0.0.0/0
+MASQUERADE  all  --  172.18.0.0/16        0.0.0.0/0
+MASQUERADE  tcp  --  10.0.1.2             10.0.1.2             tcp dpt:9292
+```
+Правило отвечает за выпуск во внешнюю сеть контейнеров из bridge-сетей
+
+Цепочка Docker и правила в ней отвечают за перенаправление трафика на адреса
+конкретных контейнеров.
+```bash
+Chain DOCKER 
+DNAT       tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9292 to:10.0.1.2:9292
+```
+Процесс docker-proxy слушает на tcp-порту 9292
+```bash
+ps ax | grep docker-proxy
+13479 ?        Sl     0:00 /usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 9292 -container-ip 10.0.1.2 -container-port 9292
+```
+
+#### Docker compose
+
+В директории src создаем файл docker-compose.yml
+```yml
+
+version: '3.3'
+services:
+  post_db:
+    container_name: post_db     
+    image: mongo:3.2
+    volumes:
+      - post_db:/data/db
+    networks:
+      - reddit
+  ui:
+    build: ./ui
+    container_name: ui
+    image: ${USERNAME}/ui:1.0
+    ports: 
+      - 9292:9292/tcp
+    networks:
+      - reddit
+  post:
+    build: ./post-py
+    container_name: post-py
+    image: ${USERNAME}/post:1.0
+    networks:
+     - reddit 
+  comment:
+    build: ./comment
+    container_name: comment
+    image: ${USERNAME}/comment:1.0
+    networks:
+      - reddit
+volumes:
+  post_db:
+networks:
+  reddit:
+
+```
+Остановим контейнеры 
+```bash
+docker kill $(docker ps -q)
+```
+Экспортируем переменную USERNAME и запустим docker-compose
+```bash
+export USERNAME=<your-login>
+docker-compose up -d
+docker-compose ps
+
+
+    Name                  Command             State           Ports         
+----------------------------------------------------------------------------
+src_comment_1   puma                          Up                            
+src_post_1      python3 post_app.py           Up                            
+src_post_db_1   docker-entrypoint.sh mongod   Up      27017/tcp             
+src_ui_1        puma                          Up      0.0.0.0:9292->9292/tcp
+```
+Заходим на http://ip_docker_machine:9292 работает корректно.
+
+- Изменеие docker-compose под кейс с множеством сетей, сетевых алисов.
+- Параметризация с помощью переменных окружений:
+  - порт публикации сервиса ui
+  - версия сервисов
+  - Параметризованные параметры запишите в отдельный файл c расширением .env
+- Сущности создаваемые docker-compose можно изменить параметром containers_name
+
+```yml
+version: '3.3'
+services:
+  post_db:
+    container_name: post_db     
+    image: "mongo:${MONGO}"
+    volumes:
+      - post_db:/data/db
+    networks:
+      - back_net
+  ui:
+    build: ./ui
+    container_name: ui
+    image: "${USERNAME}/ui:${UI}"
+    ports: 
+      - ${NETWORK}
+    networks:
+      - front_net
+  post:
+    build: ./post-py
+    container_name: post-py
+    image: "${USERNAME}/post:${POST}"
+    networks:
+      - back_net
+      - front_net  
+  comment:
+    build: ./comment
+    container_name: comment
+    image: "${USERNAME}/comment:${COMMENT}"
+    networks:
+      - back_net
+      - front_net
+volumes:
+  post_db:
+networks:
+  front_net:
+  back_net:
+```   
