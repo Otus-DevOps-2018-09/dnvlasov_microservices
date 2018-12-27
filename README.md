@@ -758,4 +758,284 @@ networks:
 ```   
 
 ### ДЗ №16
-a
+Создаем виртуальную машину.
+```
+#!/bin/bash
+export GOOGLE_PROJECT=docker-224713
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-disk-size 100 \
+--google-zone europe-west1-b \
+gitlab-ci-2
+```
+Разрешаем подключение по HTTP/HTTPS
+```
+#!/bin/bash
+gcloud compute firewall-rules create gitlab-ci\
+ --allow tcp:80,tcp:443 \
+ --target-tags=docker-machine \
+ --description="gitlab-ci connections http & https" \
+ --direction=INGRESS
+```
+Ставим docker с помощью ansible
+
+ansible.cfg
+``` 
+[defaults]
+inventory = ./inventory
+remote_user = docker-user
+private_key_file = ~/.docker/machine/machines/gitlab-ci/id_rsa
+host_key_checking = False
+retry_files_enabled = False
+```
+inventory
+```
+docker ansible_host=35.195.228.47
+```
+docker-composer-install
+```yml
+   
+---
+- name: install docker
+  hosts: docker2
+  become: true
+  
+  tasks:
+    
+  - name: install dependencies
+    apt:
+      name: 
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg2
+      - software-properties-common
+      - python-pip
+    tags:
+      - docker      
+        
+  
+  - name: Debian add docker key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+    tags:
+      - docker
+
+  - name: Verify key
+    apt_key:
+       id: 0EBFCD88
+       state: present
+    tags:
+      - docker
+  
+  - name: Add repository
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable    
+      state: present
+      update_cache: yes
+    tags:
+      - docker
+
+
+  - name: install docker
+    apt: 
+     name: 
+       - docker-ce
+       - docker-compose
+     update_cache: yes
+    tags:
+      - docker    
+```
+На сервере создаем необходимые директории
+```bash
+# mkdir -p /srv/gitlab/config /srv/gitlab/data /srv/gitlab/logs
+# cd /srv/gitlab/
+# touch docker-compose.yml
+```
+Создаем файл docker-compose.yml
+``mage: 'gitlab/gitlab-ce:latest'
+  restart: always
+  hostname: 'gitlab.example.com'
+  environment:
+    GITLAB_OMNIBUS_CONFIG: |
+      external_url 'http://<YOUR-VM-IP>'
+  ports:
+    - '80:80'
+    - '443:443'
+    - '2222:22'
+  volumes:
+    - '/srv/gitlab/config:/etc/gitlab'
+    - '/srv/gitlab/logs:/var/log/gitlab'
+    - '/srv/gitlab/data:/var/opt/gitlab'`
+```
+Запускаем docker-compose up -d
+
+Проверям что все прошло успешно http://ip_gitlab
+
+Указываем пароль root, переходим в админку выключаем регистацию новых пользователей.
+
+Создаем private группу homework,создадим проект.
+
+Добавим в username_microservices
+```
+git checkout -b gitlab-ci-1
+git remote add gitlab http://<your-vm-ip>/homework/example.git
+git push gitlab gitlab-ci-1
+```
+Переходим к определению CI/CD Pipeline для проекта, 
+добавим в рерозиторий файл .gitlab-ci.yml
+```yml
+stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  script:
+    - echo 'Testing 1'
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+Сохраняем файл.
+```bash
+git add .gitlab-ci.yml
+git commit -m 'add pipeline definition'
+git push gitlab gitlab-ci-1
+```
+Теперь если перейти в раздел CI/CD мы увидим, что пайплайн готов к
+запуску.
+Но находится в статусе pending / stuck так как у нас нет runner, запустим Runner и зарегистрируем его в интерактивном
+режиме.
+
+#### Runner
+Перед тем, как запускать и регистрировать runner
+нужно получить токен, переходим
+```http
+http://your_ip/homework/example/settings/ci_cd
+```
+Открываем  Runner, копируем 
+- 3 Use the following registration token during setup:
+На сервере, где работает Gitlab CI выполняем команду: 
+```bash
+docker run -d --name gitlab-runner --restart always \
+-v /srv/gitlab-runner/config:/etc/gitlab-runner \
+-v /var/run/docker.sock:/var/run/docker.sock \
+gitlab/gitlab-runner:latest 
+```
+После запуска Runner нужно зарегистрировать, это можно сделать командой
+```bash
+root@gitlab-ci:~# docker exec -it gitlab-runner gitlab-runner register
+Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
+http://<YOUR-VM-IP>/
+Please enter the gitlab-ci token for this runner:
+<TOKEN>
+Please enter the gitlab-ci description for this runner:
+[38689f5588fe]: my-runner
+Please enter the gitlab-ci tags for this runner (comma separated):
+linux,xenial,ubuntu,docker
+Whether to run untagged builds [true/false]:
+[false]: true
+Whether to lock the Runner to current project [true/false]:
+[true]: false
+Please enter the executor:
+docker
+Please enter the default Docker image (e.g. ruby:2.1):
+alpine:latest
+Runner registered successfully.
+```
+Если все получилось, то в настройках новый runner
+- 4. Start the Runner!  
+- Runners activated for this project
+После добавления Runner пайплайн запустился
+
+#### Добавим тестирование приложения reddit в pipeline
+```
+git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+git add reddit/
+git commit -m “Add reddit app”
+git push gitlab gitlab-ci-1
+```
+#### Тестируем reddit
+
+Изменим описание пайплайна в .gitlab-ci.yml
+```yml
+image: ruby:2.4.2
+stages:
+...
+variables:
+ DATABASE_URL: 'mongodb://mongo/user_posts'
+before_script:
+ - cd reddit
+ - bundle install
+...
+test_unit_job:
+ stage: test
+ services:
+ - mongo:latest
+ script:
+ - ruby simpletest.rb
+```
+#### Приложение reddit
+В описании pipeline мы добавили вызов теста в файле simpletest.rb,
+нужно создать его в папке reddit.
+```
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+```
+
+#### Приложение reddit
+добавить библиотеку для тестирования в reddit/Gemfile приложения.
+- gem 'rack-test'
+```
+
+source 'https://rubygems.org'
+
+gem 'sinatra', '~> 2.0.1'
+gem 'haml'
+gem 'bson_ext'
+gem 'bcrypt'
+gem 'puma'
+gem 'mongo'
+gem 'json'
+gem 'rack-test'
+
+group :development do
+    gem 'capistrano',         require: false
+    gem 'capistrano-rvm',     require: false
+    gem 'capistrano-bundler', require: false
+    gem 'capistrano3-puma',   require: false
+end
+```
+Теперь на каждое изменение в коде приложения будет запущен тест
