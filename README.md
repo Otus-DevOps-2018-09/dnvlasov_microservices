@@ -855,7 +855,8 @@ docker-composer-install
 # touch docker-compose.yml
 ```
 Создаем файл docker-compose.yml
-``mage: 'gitlab/gitlab-ce:latest'
+```
+image: 'gitlab/gitlab-ce:latest'
   restart: always
   hostname: 'gitlab.example.com'
   environment:
