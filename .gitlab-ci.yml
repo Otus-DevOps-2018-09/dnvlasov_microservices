@@ -76,8 +76,8 @@ production:
  when: manual
  only:
     - /^\d+\.\d+\.\d+/
-  script:
-    - echo 'Deploy'
-  environment:     
+ script:
+   - echo 'Deploy'
+ environment:     
      name: production
      url: https://example.com     
