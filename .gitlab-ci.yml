@@ -48,11 +48,23 @@ staging:
        name: stage
        url: https://beta.example.com
 
-                
+stage:
+     stage: stage
+     when: manual
+     only:
+       - /^\d+\.\d+\.\d+/
+     script:
+        - echo 'Deploy'
+       environment:
+         name: stage
+         url: https://beta.example.com 
+            
        
 production: 
      stage: production
      when: manual
+     only:
+       - /^\d+\.\d+\.\d+/ 
      script:
       - echo 'Deploy'
      environment:     
