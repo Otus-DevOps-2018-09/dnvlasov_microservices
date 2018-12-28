@@ -22,16 +22,10 @@ build_job:
 test_unit_job:
      stage: test
      services:
-<<<<<<< HEAD
        - mongo:latest
      script:
        - ruby simpletest.rb
-=======
-        - mongo:latest
-     script:
-         - ruby simpletest.rb
-         
->>>>>>> 2736a452680e1127b63240b01ea02564e859f593
+
 test_integration_job:
      stage: test
      script:
@@ -66,7 +60,6 @@ staging:
        url: https://beta.example.com
 
 stage:
-<<<<<<< HEAD
   stage: stage
   when: manual
   only:
@@ -88,26 +81,3 @@ production:
   environment:     
      name: production
      url: https://example.com     
-=======
-     stage: stage
-     when: manual
-     only:
-       - /^\d+\.\d+\.\d+/
-     script:
-       - echo 'Deploy'
-     environment:
-       name: stage
-       url: https://beta.example.com 
-            
-       
-production: 
-     stage: production
-     when: manual
-     only:
-       - /^\d+\.\d+\.\d+/ 
-     script:
-      - echo 'Deploy'
-     environment:     
-       name: production
-       url: https://example.com     
->>>>>>> 2736a452680e1127b63240b01ea02564e859f593
