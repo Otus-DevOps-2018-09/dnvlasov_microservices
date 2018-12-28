@@ -18,18 +18,18 @@ build_job:
 test_unit_job:
      stage: test
      services:
-             - mongo:latest
+       - mongo:latest
      script:
-         - ruby simpletest.rb
+       - ruby simpletest.rb
 test_integration_job:
-        stage: test
-        script:
-          - echo 'Testing 2'
+     stage: test
+     script:
+       - echo 'Testing 2'
 
 deploy_dev_job:
    stage: review
    script:
-     - echo 'Deploy'
+       - echo 'Deploy'
    environment:
      name: dev
      url: http://dev.example.com
@@ -57,19 +57,19 @@ stage:
   only:
     - /^\d+\.\d+\.\d+/
   script:
-          - echo 'Deploy'
+    - echo 'Deploy'
   environment:
      name: stage
      url: https://beta.example.com     
                 
        
 production: 
-     stage: production
-     when: manual
-     only:
-        - /^\d+\.\d+\.\d+/
-     script:
-             - echo 'Deploy'
-     environment:     
-         name: production
-         url: https://example.com     
+ stage: production
+ when: manual
+ only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:     
+     name: production
+     url: https://example.com     
