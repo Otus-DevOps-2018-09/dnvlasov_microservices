@@ -1,0 +1,12 @@
+version: '3.3'
+services:
+  post_db:
+    ports:
+      - 30017:27017      
+  ui:
+    ports: 
+      - 10292:9292
+    command: puma --debug -w 2
+  post:
+  comment: 
+   command: puma --debug -w 2

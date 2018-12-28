@@ -8,6 +8,10 @@ gem 'puma'
 gem 'mongo'
 gem 'json'
 gem 'rack-test'
+<<<<<<< HEAD
+=======
+
+>>>>>>> gitlab-ci-1
 group :development do
     gem 'capistrano',         require: false
     gem 'capistrano-rvm',     require: false

@@ -1,0 +1,52 @@
+---
+- name: install docker
+  hosts: docker2
+  become: true
+  
+  tasks:
+    
+  - name: install dependencies
+    apt:
+      name: 
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg2
+      - software-properties-common
+      - python-pip
+    tags:
+      - docker      
+        
+  
+  - name: Debian add docker key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+    tags:
+      - docker
+
+  - name: Verify key
+    apt_key:
+       id: 0EBFCD88
+       state: present
+    tags:
+      - docker
+  
+  - name: Add repository
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable    
+      state: present
+      update_cache: yes
+    tags:
+      - docker
+
+
+  - name: install docker
+    apt: 
+     name: 
+       - docker-ce
+       - docker-compose
+     update_cache: yes
+    tags:
+      - docker    
+

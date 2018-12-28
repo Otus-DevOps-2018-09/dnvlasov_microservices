@@ -1,6 +1,6 @@
 #!/bin/bash
-gcloud compute firewall-rules create reddit-app \
- --allow tcp:9292 \
+gcloud compute firewall-rules create gitlab-ci\
+ --allow tcp:80,tcp:443 \
  --target-tags=docker-machine \
- --description="Allow PUMA connections" \
+ --description="gitlab-ci connections http & https" \
  --direction=INGRESS 

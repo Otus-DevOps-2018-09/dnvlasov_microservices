@@ -1,9 +1,10 @@
 #!/bin/bash
+User=`grep -i username .env| cut -d = -f2`
 kills=`docker kill $(docker ps -q)`
 mongo=`docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest`
-post=`docker run -d --network=reddit --network-alias=post verty/post:1.0`
-comment=`docker run -d --network=reddit --network-alias=comment verty/comment:1.0`
-ui=`docker run -d --network=reddit -p 9292:9292 verty/ui:1.0`
+post=`docker run -d --network=reddit --network-alias=post $User/post:1.0`
+comment=`docker run -d --network=reddit --network-alias=comment $User/comment:1.0`
+ui=`docker run -d --network=reddit -p 9292:9292 $User/ui:1.0`
 stat=`docker ps -q`
 echo "----------------"
 printf "Kill  running  docker containers\n$kills\n"
