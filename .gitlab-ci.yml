@@ -48,7 +48,7 @@ branch review:
   only:
     - branches
   except:
-     - master    
+    - master    
      
 staging:
   stage: stage
