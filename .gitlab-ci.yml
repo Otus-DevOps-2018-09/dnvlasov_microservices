@@ -54,10 +54,10 @@ stage:
      only:
        - /^\d+\.\d+\.\d+/
      script:
-        - echo 'Deploy'
+       - echo 'Deploy'
      environment:
-        name: stage
-        url: https://beta.example.com 
+       name: stage
+       url: https://beta.example.com 
             
        
 production: 
