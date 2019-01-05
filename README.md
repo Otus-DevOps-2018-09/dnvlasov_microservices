@@ -1233,9 +1233,9 @@ prometheus_build_info{branch="HEAD",goversion="go1.9.1",instanc
 e="localhost:9090", job="prometheus", revision=
 "3a7c51ab70fc7615cd318204d3aa7c078b7c5b20",version="1.8.1"} 1 
 
-prometheus_build_info - идентификатор собранной информации. 
+`prometheus_build_info` - идентификатор собранной информации. 
 
-branch,goversion,instance,job,revision,version - добавляет метаданных метрике, уточняет ее.
+`branch,goversion,instance,job,revision,version` - добавляет метаданных метрике, уточняет ее.
 Использование лейблов дает нам возможность не ограничиваться
 лишь одним названием метрик для идентификации получаемой
 информации. Лейблы содержаться в {} скобках и представлены
@@ -1433,7 +1433,7 @@ UI сервис тоже.
 нас запущены контейнеры) и предоставлению этой
 информации в Prometheus. 
 
-Определим еще одинсервис в docker/docker-compose.yml файле. 
+Определим еще один сервис в docker/docker-compose.yml файле. 
 
 ```yml
 
