@@ -1491,3 +1491,12 @@ node_load1
 - Добавим нагрузки: yes > /dev/null
 
 Нагрузка выросла,мониторинг отображает повышение загруженности CPU
+
+Ссылки на dockerhub 
+```html
+https://cloud.docker.com/u/verty/repository/docker/verty/prometheus
+https://cloud.docker.com/repository/docker/verty/post
+https://cloud.docker.com/repository/docker/verty/comment
+https://cloud.docker.com/repository/docker/verty/ui
+```
+
