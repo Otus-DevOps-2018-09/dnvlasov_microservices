@@ -1182,3 +1182,312 @@ master
 
 Теперь, на каждую ветку в git отличную от master
 Gitlab CI будет определять новое окружени
+
+### ДЗ №18
+
+#### Подготовка окружения
+
+ Создадим правило фаервола для Prometheus и Puma:
+```bash
+$ gcloud compute firewall-rules create prometheus-default --allow tcp:9090
+$ gcloud compute firewall-rules create puma-default --allow tcp:9292
+```
+Содаем Docker хост в GCE настраиваем локальное окружение на работу с ним.
+```bash
+#!/bin/bash
+export GOOGLE_PROJECT=docker-224713
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-zone europe-west1-b \
+--google-disk-size 100 \
+docker-host
+```
+Подключаемся к созданной docker-machine
+```bash
+$ eval $(docker-machine env docker-host)
+```
+Запускаем  Prometheus внутри Docker контейнера готовый образ с  DockerHub.
+```bash
+$ docker run -rm -p 9090:9090 -d --name prometheus prom/prometheus:v2.1.0
+```
+Открываем веб интерфейс.
+
+По умолчанию сервер слушает на порту 9090, а IP адрес созданной VM
+можно узнать, используя команду: 
+```bash
+$ docker-machine ip docker-host
+```
+Вкладка Console, которая сейчас активирована, выводит численное значение
+выражений. Вкладка Graph, левее от нее, строит график изменений значений
+метрик со временем.
+Если кликнем по "insert metric at cursor", то увидим, что
+Prometheus уже собирает какие-то метрики. По умолчанию он
+собирает статистику о своей работе. Выберем, например,
+метрику prometheus_build_info и нажмем Execute, чтобы
+посмотреть информацию о версии.
+
+#### Поясним результат вывода
+
+prometheus_build_info{branch="HEAD",goversion="go1.9.1",instanc
+e="localhost:9090", job="prometheus", revision=
+"3a7c51ab70fc7615cd318204d3aa7c078b7c5b20",version="1.8.1"} 1 
+
+prometheus_build_info - идентификатор собранной информации. 
+
+branch,goversion,instance,job,revision,version - добавляет метаданных метрике, уточняет ее.
+Использование лейблов дает нам возможность не ограничиваться
+лишь одним названием метрик для идентификации получаемой
+информации. Лейблы содержаться в {} скобках и представлены
+наборами "ключ=значение".
+
+В конце единица  - численное значение метрики, либо NaN, если
+значение недоступно
+
+#### Targets
+
+Targets (цели) - представляют собой системы или процессы, за
+которыми следит Prometheus. Помним, что Prometheus является
+pull системой, поэтому он постоянно делает HTTP запросы на
+имеющиеся у него адреса (endpoints). Посмотрим текущий список
+целей.
+
+#### Создание Docker образа
+
+Создаем директорию monitoring/prometheus, в этой директории 
+создем Dockerfile
+```Dockerfile
+FROM prom/prometheus:v2.1.0
+ADD prometheus.yml /etc/prometheus/
+```
+
+#### Конфигурация
+
+Определим простой конфигурационный файл
+для сбора метрик с наших микросервисов. В
+директории monitoring/prometheus создайте файл
+prometheus.yml со следующим содержимым
+
+```yml
+
+---
+global:
+  scrape_interval: '5s'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+        - 'localhost:9090'
+  - job_name: 'ui'
+    static_configs:
+      - targets:
+        - 'ui:9292'
+  - job_name: 'comment'
+    static_configs:
+      - targets:
+        - 'comment:9292'
+```
+#### Создаем образ
+
+```bash
+$ export USER_NAME=username
+$ docker build -t $USER_NAME/prometheus .
+```
+#### Образы микросервисов
+
+Сборку образов теперь необходимо производить
+при помощи скриптов docker_build.sh, которые есть
+в директории каждого сервиса
+
+#### Соберем images
+
+Выполните сборку образов при помощи скриптов docker_build.sh 
+```bash
+for i in ui post-py comment; do cd src/$i; bash
+docker_build.sh; cd -; done
+```
+Определите в docker/docker-compose.yml файле новый сервис. 
+```
+
+version: '3.3'
+services:
+  post_db:
+    container_name: post_db     
+    image: "mongo:${MONGO}"
+    volumes:
+      - post_db:/data/db
+    networks:
+      - back_net
+  ui:
+    container_name: ui
+    image: "${USERNAME}/ui:${UI}"
+    ports: 
+      - ${NETWORK}
+    networks:
+      - front_net
+  post:
+    container_name: post-py
+    image: "${USERNAME}/post:${POST}"
+    networks:
+      - back_net
+      - front_net  
+  comment:
+    container_name: comment
+    image: "${USERNAME}/comment:${COMMENT}"
+    networks:
+      - back_net
+      - front_net
+  prometheus:
+    image: ${USERNAME}/prometheus
+    ports:
+      - '9090:9090'
+    volumes:
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml' 
+      - '--storage.tsdb.path=/prometheus' - Передаем доп. параметры в командной строке
+      - '--storage.tsdb.retention=1d' - Задаем время хранения метрик в 1 день
+    networks:
+      - back_net
+      - front_net      
+
+            
+volumes:
+  prometheus_data:      
+  post_db:
+networks:
+  front_net:
+  back_net:        
+```
+Сборка Docker образов с данного момента производится через скрипт
+`docker_build.sh` поэтому из файла `docker_compose.yml` удалениы все дерективы `build` и используется `image`
+
+#### Запуск микросервисов
+Поднимем сервисы, определенные в docker/dockercompose.yml 
+```bash
+$ docker-compose up -d 
+```
+#### Мониторинг состояния микросервисов
+
+Посмотрим список endpoint-ов, с которых собирает
+информацию Prometheus.
+
+Endpoint-ы  в состоянии UP.
+
+#### Healthchecks
+
+Healthcheck-и представляют собой проверки того, что
+наш сервис здоров и работает в ожидаемом режиме. В
+нашем случае healthcheck выполняется внутри кода
+микросервиса и выполняет проверку того, что все
+сервисы, от которых зависит его работа, ему доступны.
+
+Если требуемые для его работы сервисы здоровы, то
+healthcheck проверка возвращает status = 1, что
+соответсвует тому, что сам сервис здоров.
+
+Если один из нужных ему сервисов нездоров или
+недоступен, то проверка вернет status = 0. 
+
+#### Состояние сервиса UI
+В веб интерфейсе Prometheus выполним поиск по
+названию метрики ui_health.
+
+Построим график того, как менялось
+значение метрики ui_health со временем.
+
+#### Остановим post сервис
+Останавливаем  сервис post на некоторое
+время и проверим, как изменится статус ui сервиса,
+который зависим от post. 
+```bash 
+$ docker-compose stop post
+```
+Метрика изменила свое значение на 0, что означает, что UI
+сервис стал нездоров
+
+Наберем в строке выражений ui_health_ и Prometheus нам предложит
+дополнить названия метрик. 
+```
+ui_health_comment_availability
+или
+ui_health_post_availability
+```
+Выберем `ui_health_comment_availability`
+видим, что сервис свой статус не менял в данный промежуток
+времени
+
+А с `ui_health_post_availability` все плохо.
+ Поднимем post сервис. 
+```bash
+$ docker-compose start post 
+```
+Post сервис поправился.
+UI сервис тоже.
+
+#### Node exporter
+
+Воспользуемся Node экспортер для сбора
+информации о работе Docker хоста (виртуалки, где у
+нас запущены контейнеры) и предоставлению этой
+информации в Prometheus. 
+
+Определим еще одинсервис в docker/docker-compose.yml файле. 
+
+```yml
+
+services:
+   ........
+  node-exporter:
+    image: prom/node-exporter:v0.15.2
+    user: root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'      
+    networks:
+      - back_net
+
+```
+Чтобы  Prometheus следить за еще одним сервисом, 
+добавим информацию о нем в конфиг
+```yml
+
+scrape_configs:
+    ...
+
+  - job_name: 'node'
+    static_configs:
+      - targets:
+        - 'node-exporter:9100'      
+
+
+```
+Соберем новый Docker для Prometheus:
+```bash
+monitoring/prometheus $ docker build -t $USER_NAME/prometheus .
+```
+Пересоздадим наши сервисы
+```bash
+$ docker-compose down
+$ docker-compose up -d 
+```
+
+ 
+В списоке endpoint-ов Prometheus  появится еще один endpoint 
+
+Получим информацию об использовании CPU 
+```prometheus
+node_load1
+```
+#### Проверим мониторинг
+
+- Зайдем на хост: docker-machine ssh docker-host
+- Добавим нагрузки: yes > /dev/null
+
+Нагрузка выросла,мониторинг отображает повышение загруженности CPU
