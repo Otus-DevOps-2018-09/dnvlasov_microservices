@@ -1039,4 +1039,146 @@ group :development do
     gem 'capistrano3-puma',   require: false
 end
 ```
-Теперь на каждое изменение в коде приложения будет запущен тест
+Теперь на каждое изменение в коде приложения будет запущен тест.
+
+### ДЗ №17
+
+Создадаем новый проект, example2.
+
+Добавляем новый remote 
+```bash
+git checkout -b gitlab-ci-2
+git remote add gitlab2 http://ip_gitlab-ci/homework/example2.git
+git push gitlab2 gitlab-ci-2
+```
+Чтобы заработал pipeline включаем runner
+1. Переименуем deploy stage в rewiew.
+2. deploy_job меняем на deploy_dev_job
+3. Добавляем environment
+```yml
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+     name: dev
+     url: http://dev.example.com
+```
+После завершения pipeline с определением окружения переходим
+`Environments` появится определение первого окружения `dev`
+
+Определим два новых этапа: stage и production, первый будет
+содержать job имитирующий выкатку на staging окружение, второй
+на production окружение.
+Определим эти job таким образом, чтобы они запускались с кнопки
+```yml
+stages:
+  - build
+  - test
+  - review
+  - stage
+  - production
+...
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+     name: dev
+    url: http://dev.example.com
+staging:
+  stage: stage
+  when: manual
+  script:
+    - echo 'Deploy'
+  environment:
+    name: stage
+    url: https://beta.example.com
+production:
+  stage: production
+  when: manual
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: https://example.com
+```   
+when: manual – говорит о том, что job должен быть
+запущен по кнопке из UI.
+
+На странице окружений  появиться оружения staging и production.
+
+На production окружение выводится приложение с явно зафиксированной версией
+(например, 2.4.10). 
+
+Добавим в описание pipeline директиву, которая не позволит нам выкатить на staging и production код,
+не помеченный с помощью тэга в git.
+```yml
+stages:
+  - build
+  - test
+  - review
+  - stage
+  - production
+… … …
+stage:
+  stage: stage
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: stage
+    url: https://beta.example.com
+production:
+  stage: production
+  when: manual
+  only:
+    - /^\d+\.\d+\.\d+/
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: https://example.com
+```
+Директива only описывает список условий, которые
+должны быть истинны, чтобы job мог запуститься.
+Регулярное выражение слева означает, что должен стоять
+semver тэг в git, например, 2.4.10
+
+Изменение, помеченное тэгом в git запустит полный pipeline.
+```bash
+git commit -a -m ‘#4 add logout button to profile page’
+git tag 2.4.10
+git push gitlab2 gitlab-ci-2 --tags
+```
+Динамические окружения
+```yml
+stages:
+  - build
+  - test
+  - review
+  - stage
+  - production
+. . .
+branch review:
+  stage: review
+  script: echo "Deploy to $CI_ENVIRONMENT_SLUG"
+  environment:
+     name: branch/$CI_COMMIT_REF_NAME
+     url: http://$CI_ENVIRONMENT_SLUG.example.com
+  only:
+     - branches
+  except:
+     - master
+staging:
+  stage: stage
+  when: manual
+```
+Этот job определяет динамическое окружение
+для каждой ветки в репозитории, кроме ветки
+master
+
+Теперь, на каждую ветку в git отличную от master
+Gitlab CI будет определять новое окружени
