@@ -1500,3 +1500,127 @@ https://cloud.docker.com/repository/docker/verty/comment
 https://cloud.docker.com/repository/docker/verty/ui
 ```
 
+### ДЗ №18
+#### Мониторинг приложения и инфраструктуры
+Содаем Docker хост в GCE.
+```bash
+
+#!/bin/bash
+export GOOGLE_PROJECT=docker-<number project>
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-zone europe-west1-b \
+--google-disk-size 100 \
+docker-host
+```
+Настраиваем локальное окружение
+```bash
+$ eval $(docker-machine env docker-host) 
+```
+Узнаем IP адрес
+```bash
+$ docker-machine ip docker-host
+```
+Разделим файлы Docker compose
+
+Описание приложений в docker-compose.yml
+
+Мониторинг  dockercompose-monitoring.yml
+
+Настраиваем cAdvisor для наблюдения за состоянием наших Docker контейнеров.
+
+cAdvisor будем запускать в контейнере. Добавим новый
+сервис в наш компоуз файл мониторинга docker-compose-monitoring.yml
+```yml
+version: '3.3'
+services:
+  ... 
+  cadvisor:
+    image: google/cadvisor:v0.29.0
+    volumes:
+      - '/:/rootfs:ro'
+      - '/var/run:/var/run:rw'
+      - '/sys:/sys:ro'
+      - '/var/lib/docker/:/var/lib/docker:ro'
+    ports:
+      - '8080:8080' 
+    networks: 
+      - front_net
+```
+Добавим информацию о новом сервисе в конфигурацию Prometheus, чтобы он начал собирать метрики
+
+```yml
+---
+global:
+  scrape_interval: '5s'
+
+scrape_configs:
+
+  - job_name: 'cadvisor'
+    static_configs:
+       - targets:
+         - 'cadvisor:8080' 
+```
+Пересоберем образ Prometheus с обновленной конфигурацией.
+```bash
+$ export USER_NAME=dockerhab
+$ docker build -t $USER_NAME/prometheus .
+```
+Запустим сервисы: 
+```bash
+$ docker-compose up -d
+$ docker-compose -f docker-compose-monitoring.yml up -d 
+```
+Откроем страницу Web UI по адресу http://<docker-machine-host-ip>:8080
+
+#### Grafana
+
+Используем инструмент Grafana для визуализации данных из Prometheus.
+
+Добавим новый сервис в docker-compose-monitoring.yml и сервис grafana в одну сеть с Prometheus.
+```yml
+#docker-compose-monitoring.yml 
+
+services:
+   ...
+   grafana:
+    image: grafana/grafana:5.0.0
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=secret
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    networks:
+      - front_net 
+ volumes:
+  grafana_data:      
+```
+Запустим новый сервис
+
+```bash
+$ docker-compose -f docker-compose-monitoring.yml up -d grafana 
+```
+Откроем страницу Web UI графаны по адресу 
+http://<docker-mahine-host-ip>:3000 и используем для входа
+логин и пароль админ пользователя, которые мы передали
+через переменные окружения
+
+После входа добавим источник данных
+
+Зададим нужный тип и параметры подключения
+
+Добавим dashboard загрузить json и поместим его в `monitoring/grafana/dashboard` поменяв 
+название файла `DockerMonitoring.json`
+
+Откроем вновь веб интерфейс Grafana и выберем импортировать шаблон
+
+Загружаем скачанный дашборд. При загрузке указыываем источник данных для визуализации.
+
+Появился набор графиков с информацией о состоянии хостовой системы и работе контейнеров.
+
+#### Сбор метрик приложения
