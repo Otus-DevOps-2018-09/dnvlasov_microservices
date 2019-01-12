@@ -12,6 +12,7 @@ services:
       - '--storage.tsdb.retention=1d'
     networks:
       - front_net
+      
   node-exporter:
     image: prom/node-exporter:v0.15.2
     user: root
