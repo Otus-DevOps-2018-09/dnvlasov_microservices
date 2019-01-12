@@ -37,3 +37,5 @@ alerting:
     static_configs:
     - targets:
       - "alertmanager:9093"
+        - 'node-exporter:9100'      
+
