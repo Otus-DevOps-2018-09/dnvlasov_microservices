@@ -1500,7 +1500,8 @@ https://cloud.docker.com/repository/docker/verty/comment
 https://cloud.docker.com/repository/docker/verty/ui
 ```
 
-### ДЗ №18
+
+### ДЗ №19
 #### Мониторинг приложения и инфраструктуры
 Содаем Docker хост в GCE.
 ```bash
@@ -1836,3 +1837,4 @@ https://cloud.docker.com/repository/docker/verty/comment
 https://cloud.docker.com/repository/docker/verty/ui
 https://cloud.docker.com/repository/docker/verty/alertmanager
 ```
+
