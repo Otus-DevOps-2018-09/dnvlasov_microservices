@@ -5,4 +5,7 @@ docker-machine create --driver google \
 --google-machine-type n1-standard-1 \
 --google-zone europe-west1-b \
 --google-disk-size 100 \
-docker-host
+--google-open-port 5601/tcp \
+--google-open-port 9292/tcp \
+--google-open-port 9411/tcp \
+logging
