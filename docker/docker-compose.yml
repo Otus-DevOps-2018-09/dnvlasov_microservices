@@ -55,6 +55,7 @@ services:
     networks:
       - back_net
       - front_net
+
   prometheus:
     image: ${USERNAME}/prometheus
     ports:
