@@ -1837,4 +1837,267 @@ https://cloud.docker.com/repository/docker/verty/comment
 https://cloud.docker.com/repository/docker/verty/ui
 https://cloud.docker.com/repository/docker/verty/alertmanager
 ```
+### ДЗ №20
 
+Выполните сборку образов при помощи скриптов docker_build.sh из корня репозитория.
+```bash
+for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+```
+Создадим Docker хост в GCE и настроим локальное окружение на работу с ним
+```bash
+#!/bin/bash
+export GOOGLE_PROJECT=docker-224713
+docker-machine create --driver google \
+--google-machine-image https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-1604-lts \
+--google-machine-type n1-standard-1 \
+--google-zone europe-west1-b \
+--google-disk-size 100 \
+--google-open-port 5601/tcp \
+--google-open-port 9292/tcp \
+--google-open-port 9411/tcp \
+logging
+```
+Создадим отдельный compose-файл для нашей системы логирования в папке docker/
+
+docker/docker-compose-logging.yml
+```yml
+
+version: '3'
+services:
+  fluentd:
+    image: ${USERNAME}/fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+  elasticsearch:
+    image: elasticsearch:5.6.14-alpine
+    expose:
+      - 9200
+    ports:
+      - "9200:9200"
+  kibana:
+    image: kibana:5.6.14
+    ports:
+```
+Создадим образ Fluentd с нужной нам конфигурацией.
+
+Создаём в вашем проекте microservices директорию logging/fluentd
+
+В созданной директорий, создем Dockerfile.
+```Dockerfile
+FROM fluent/fluentd:v0.12
+RUN gem install fluent-plugin-elasticsearch --no-rdoc --no-ri --version 1.9.5
+RUN gem install fluent-plugin-grok-parser --no-rdoc --no-ri --version 1.0.0
+ADD fluent.conf /fluentd/etc
+```
+В этой же  директории создаем файл конфигурации.
+```conf
+<source>
+  @type forward
+  port 24224
+  bind 0.0.0.0
+</source>
+
+<match *.**>
+  @type copy
+  <store>
+    @type elasticsearch
+    host elasticsearch
+    port 9200
+    logstash_format true
+    logstash_prefix fluentd
+    logstash_dateformat %Y%m%d
+    include_tag_key true
+    type_name access_log
+    tag_key @log_name
+    flush_interval 1s
+  </store>
+  <store>
+    @type stdout
+  </store>
+</match>
+```
+Соберем  docker image для fluentd
+```bash
+docker build -t $USER_NAME/fluentd .
+```
+Запускаем сервисы приложения.
+```bash
+docker/ $ docker-compose up -d
+```
+Выполним команду для просмотра логов post сервиса: 
+```bash
+docker/ $ docker-compose logs -f post 
+```
+
+#### Отправка логов во 	Fluentd
+Определим драйвер для логирования для сервиса post внутри compose-файла 
+
+```yml
+
+version: '3.3'
+services:
+ ...
+ post:
+    container_name: reddit_post_1
+    image: "${USERNAME}/post:${POST}"
+    environment:
+      - POST_DATABASE_HOST=post_db
+      - POST_DATABASE=posts
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED} 
+    depends_on:
+      - post_db
+    ports:
+      - "5000:5000"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.post
+```
+#### Сбор логов Post сервиса
+Поднимем инфраструктуру централизованной системы
+ 
+```bash
+$ docker-compose -f docker-compose-logging.yml up -d
+$ docker-compose down
+$ docker-compose up -d 
+```
+Создадим несколько постов в приложении
+
+Добавим фильтр для парсинга json логов, приходящих от post
+сервиса, в конфиг fluentd
+```conf
+
+<source>
+  @type forward
+  port 24224
+  bind 0.0.0.0
+</source>
+
+<filter service.post>
+ @type parser
+ format json
+ key_name log
+</filter> 
+
+<filter service.ui>
+  @type parser
+  key_name log
+  format grok
+  grok_pattern %{RUBY_LOGGER}
+</filter>
+
+<filter service.ui>
+  @type parser
+  format grok
+  grok_pattern service=%{WORD:service} \| event=%{WORD:event} \| request_id=%{GREEDYDATA:request_id} \| message='%{GREEDYDATA:message}'
+  key_name message
+  reserve_data true
+</filter>
+
+<filter service.ui>
+  @type parser
+  format grok
+  key_name message
+  grok_pattern service=%{WORD:service} \| event=%{WORD:event} \| path=%{URIPATH:path} \| request_id=%{UUID:request_id} \| remote_addr=%{IP:remote_addr} \| method=%{GREEDYDATA:method} \| response_status=%{INT:response_status} 
+</filter>
+
+
+<match *.**>
+  @type copy
+  <store>
+    @type elasticsearch
+    host elasticsearch
+    port 9200
+    logstash_format true
+    logstash_prefix fluentd
+    logstash_dateformat %Y%m%d
+    include_tag_key true
+    type_name access_log
+    tag_key @log_name
+    flush_interval 1s
+  </store>
+  <store>
+    @type stdout
+  </store>
+</match>
+ ```
+Обновим образ 
+```
+docker build -t $USER_NAME/fluentd .
+```
+Перзапустим  docker-compose 
+```bash
+$ docker-compose -f docker-compose-logging.yml down
+$ docker-compose -f docker-compose-logging.yml up -d
+```
+
+#### Zipkin
+Добавим в compose-файл для сервисов логирования сервис распределенного трейсинга Zipkin
+```yml
+version: '3'
+
+services:
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+
+  fluentd:
+    build: ./fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+
+  elasticsearch:
+    image: elasticsearch
+    expose:
+      - 9200
+    ports:
+      - "9200:9200"
+
+  kibana:
+    image: kibana
+    ports:
+      - "8080:5601"
+```
+В docker/docker-compose.yml добавим для каждого сервиса поддержку ENV переменных и задаем
+параметризованный параметр ZIPKIN_ENABLED
+```
+environment:
+ - ZIPKIN_ENABLED=${ZIPKIN_ENABLED} 
+```
+В .env файле
+```bash
+ZIPKIN_ENABLED=true 
+``` 
+Обновим приложения
+```bash
+docker-compose up -d
+```
+Zipkin должен быть в одной сети с приложениями
+
+```yml
+
+version: '3'
+services:
+  zipkin:
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"   
+    networks:
+      - back_net
+      - front_net    
+etworks:
+  back_net:
+  front_net: 
+```
+Пересоздадим наши сервисы
+```bash
+$ docker-compose -f docker-compose-logging.yml -f docker-compose.yml down
+$ docker-compose -f docker-compose-logging.yml -f docker-compose.yml up -d
+```
+
+Откроем Zipkin WEB UI на порту 9411
+       

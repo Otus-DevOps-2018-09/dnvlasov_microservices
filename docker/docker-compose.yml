@@ -1,4 +1,4 @@
-version: '3.3'
+version: '3'
 services:
   post_db:
     container_name: post_db     
@@ -8,21 +8,50 @@ services:
     networks:
       - back_net
   ui:
-    container_name: ui
     image: "${USERNAME}/ui:${UI}"
+    environment:
+      - POST_SERVICE_HOST=post
+      - POST_SERVICE_PORT=5000
+      - COMMENT_SERVICE_HOST=comment
+      - COMMENT_SERVICE_PORT=9292
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED} 
+    ports:
+      - "9292:9292"
+    depends_on:
+      - post
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.ui
     ports: 
       - ${NETWORK}
     networks:
       - front_net
   post:
-    container_name: post-py
+    container_name: reddit_post_1
     image: "${USERNAME}/post:${POST}"
+    environment:
+      - POST_DATABASE_HOST=post_db
+      - POST_DATABASE=posts
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED} 
+    depends_on:
+      - post_db
+    ports:
+      - "5000:5000"
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.post
     networks:
       - back_net
       - front_net  
   comment:
     container_name: comment
     image: "${USERNAME}/comment:${COMMENT}"
+    environment:
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED} 
     networks:
       - back_net
       - front_net
@@ -37,27 +66,14 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention=1d'
-    networks:
+    networks: 
+      - front_net
       - back_net
-      - front_net      
 
-  node-exporter:
-    image: prom/node-exporter:v0.15.2
-    user: root
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'      
-    networks:
-      - back_net
-            
 volumes:
   prometheus_data:      
   post_db:
 networks:
   front_net:
-  back_net:        
+  back_net:       
+
