@@ -2101,3 +2101,9 @@ $ docker-compose -f docker-compose-logging.yml -f docker-compose.yml up -d
 
 Откроем Zipkin WEB UI на порту 9411
        
+### ДЗ №21
+
+Пройдена Kubernetes The Hard Way.
+
+kubectl apply -f проходит по созданным deployment-ам (ui, post, mongo, comment) и поды запускаются.
+
