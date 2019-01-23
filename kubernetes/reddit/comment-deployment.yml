@@ -4,8 +4,8 @@ kind: Deployment
 metadata:
   name: comment
   labels:
-          app: reddit
-          component: comment
+    app: reddit
+    component: comment
 spec:
   replicas: 3
   selector:

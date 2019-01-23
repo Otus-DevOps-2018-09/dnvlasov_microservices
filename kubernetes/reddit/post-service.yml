@@ -5,7 +5,7 @@ metadata:
   name: post
   labels:
       app: reddit
-      component: post
+      component: comment
 spec:
   ports:
   - port: 5000
