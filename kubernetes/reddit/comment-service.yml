@@ -5,7 +5,7 @@ metadata:
   name: comment
   labels:
       app: reddit
-      component: post
+      component: comment
 spec:
   ports:
   - port: 9292
