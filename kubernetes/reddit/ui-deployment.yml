@@ -4,8 +4,8 @@ kind: Deployment
 metadata:
   name: ui
   labels:
-          app: reddit
-          component: ui
+    app: reddit
+    component: ui
 spec:
   replicas: 3
   selector:
@@ -14,10 +14,10 @@ spec:
       component: ui
   template:
     metadata:
-     name: ui-pod
-     labels:
-       app: reddit
-       component: ui
+      name: ui-pod
+      labels:
+        app: reddit
+        component: ui
     spec:
       containers:
       - image: verty/ui
@@ -25,5 +25,7 @@ spec:
         env:
         - name: ENV
           valueFrom:
-                  fieldRef:
-                          fieldPath: metadata.namespace
+            fieldRef:
+              fieldPath: metadata.namespace
+
+

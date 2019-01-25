@@ -4,8 +4,8 @@ kind: Service
 metadata:
   name: comment
   labels:
-      app: reddit
-      component: comment
+    app: reddit
+    component: comment
 spec:
   ports:
   - port: 9292

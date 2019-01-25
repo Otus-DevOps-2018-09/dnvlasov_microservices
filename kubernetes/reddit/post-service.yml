@@ -4,8 +4,8 @@ kind: Service
 metadata:
   name: post
   labels:
-      app: reddit
-      component: post
+    app: reddit
+    component: post
 spec:
   ports:
   - port: 5000

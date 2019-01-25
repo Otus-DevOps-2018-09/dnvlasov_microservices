@@ -23,5 +23,5 @@ spec:
       - image: verty/comment
         name: comment
         env:
-         - name: COMMENT_DATABASE_HOST
-           value: comment-db
+        - name: COMMENT_DATABASE_HOST
+          value: comment-db
