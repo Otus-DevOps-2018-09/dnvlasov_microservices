@@ -2107,3 +2107,238 @@ $ docker-compose -f docker-compose-logging.yml -f docker-compose.yml up -d
 
 kubectl apply -f проходит по созданным deployment-ам (ui, post, mongo, comment) и поды запускаются.
 
+### ДЗ №22
+
+####  Kubernetes. Запуск кластера и приложения. Модель безопасности.
+
+Устанавливаем virtualbox minikube.
+
+Запускаем  Minukube-кластер. 
+```
+$ minikube start
+
+Starting local Kubernetes v1.10.0 cluster...
+Starting VM...
+Getting VM IP address...
+Moving files into cluster...
+Setting up certs...
+Connecting to cluster...
+Setting up kubeconfig...
+Starting cluster components...
+Kubectl is now configured to use the cluster.
+Loading cached images from config file.
+```
+Minikube-кластер развернут. При этом автоматически был настроен конфиг kubectl. 
+
+Проверим, что это так: 
+```
+$ kubectl get nodes 
+
+NAME       STATUS   ROLES    AGE   VERSION
+minikube   Ready    master   21h   v1.10.0
+```
+#### Deployment
+
+Создаем компоненты.
+
+ui-deployment.yml
+```yml
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reddit
+      component: ui
+  template:
+    metadata:
+      name: ui-pod
+      labels:
+        app: reddit
+        component: ui
+    spec:
+      containers:
+      - image: verty/ui
+        name: ui
+```
+Запустим в Minikube ui-компоненту
+```bash
+$ kubectl apply -f ui-deployment.yml 
+
+deployment "ui" created        
+```
+Убедиvcz, что во 2,3,4 и 5 столбцах стоит число 3 (число реплик ui):
+```bash
+```
+Пробросим порт на локальную машину с помощью kubectl
+```bash
+$ kubectl port-forward <pod-name> 8080:9292
+```
+Зайдем в браузере на http://localhost:8080 убеддимся что UI работает
+и подключим остальные компоненты.
+
+comment-deployment.yml
+```yml
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: comment
+  labels:
+    app: reddit
+    component: comment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reddit
+      component: comment
+  template:
+    metadata:
+     name: comment
+     labels:
+       app: reddit
+       component: comment
+    spec:
+      containers:
+      - image: verty/comment
+        name: comment
+```
+post-deployment.yml
+```yml
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: post
+  labels:
+    app: reddit
+    component: post
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: reddit
+      component: post
+  template:
+    metadata:
+      name: post 
+      labels:
+        app: reddit
+        component: post
+    spec:
+      containers:
+      - image: verty/post
+        name: post
+```
+mongo-deployment.yml
+```yml
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+    post-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+     name: mongo
+     labels:
+       app: reddit
+       component: mongo
+       comment-db: "true"
+       post-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-persistent-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-persistent-storage
+        emptyDir: {}
+```
+Создаем объект `Service` для связи объект Service - абстракция, которая определяет набор POD-ов (Endpoints) и
+способ доступа к ним.
+
+##### comment-service.yml 
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comment
+  labels:
+    app: reddit
+    component: comment
+spec:
+  ports:
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: comment
+```
+##### ui-service.yml
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  type: NodePort      
+  ports:  
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+```
+##### post-service.yml
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: post
+  labels:
+    app: reddit
+    component: post
+spec:
+  ports:
+  - port: 5000
+    protocol: TCP
+    targetPort: 5000
+  selector:
+    app: reddit
+    component: post
+```
+
