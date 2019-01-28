@@ -2131,7 +2131,7 @@ Loading cached images from config file.
 Minikube-кластер развернут. При этом автоматически был настроен конфиг kubectl. 
 
 Проверим, что это так: 
-```
+```bash
 $ kubectl get nodes 
 
 NAME       STATUS   ROLES    AGE   VERSION
@@ -2141,7 +2141,7 @@ minikube   Ready    master   21h   v1.10.0
 
 Создаем компоненты.
 
-ui-deployment.yml
+##### ui-deployment.yml
 ```yml
 
 ---
@@ -2175,8 +2175,12 @@ $ kubectl apply -f ui-deployment.yml
 
 deployment "ui" created        
 ```
-Убедиvcz, что во 2,3,4 и 5 столбцах стоит число 3 (число реплик ui):
+Убедимся, что во 2,3,4 и 5 столбцах стоит число 3 (число реплик ui):
+
+$ kubectl get deployment
 ```bash
+NAME      DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+ui        3         3         3            3           23h
 ```
 Пробросим порт на локальную машину с помощью kubectl
 ```bash
@@ -2185,7 +2189,7 @@ $ kubectl port-forward <pod-name> 8080:9292
 Зайдем в браузере на http://localhost:8080 убеддимся что UI работает
 и подключим остальные компоненты.
 
-comment-deployment.yml
+##### comment-deployment.yml
 ```yml
 ---
 apiVersion: apps/v1beta2
@@ -2212,7 +2216,7 @@ spec:
       - image: verty/comment
         name: comment
 ```
-post-deployment.yml
+##### post-deployment.yml
 ```yml
 ---
 apiVersion: apps/v1beta2
@@ -2239,7 +2243,7 @@ spec:
       - image: verty/post
         name: post
 ```
-mongo-deployment.yml
+##### mongo-deployment.yml
 ```yml
 
 ---
@@ -2277,7 +2281,7 @@ spec:
       - name: mongo-persistent-storage
         emptyDir: {}
 ```
-Создаем объект `Service` для связи объект Service - абстракция, которая определяет набор POD-ов (Endpoints) и
+Создаем  для связи объект `Service` - абстракция, которая определяет набор POD-ов (Endpoints) и
 способ доступа к ним.
 
 ##### comment-service.yml 
@@ -2340,5 +2344,283 @@ spec:
   selector:
     app: reddit
     component: post
+```
+ПО label-ам должны были быть найдены соответствующие
+POD-ы. 
+```bash
+$ kubectl describe service comment | grep -i end
+
+Endpoints:         172.17.0.13:9292,172.17.0.15:9292,172.17.0.16:9292
+```
+Изнутри любого POD-а должно разрешаться nslookup:
+```bash
+nslookup: can't resolve '(null)': Name does not resolve
+
+Name:      comment
+Address 1: 10.100.11.98 comment.default.svc.cluster.local
+```
+##### mongodb-service.yml
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  labels:
+     app: reddit
+     component: mongo
+spec:
+  ports:
+  - port: 27017
+    protocol: TCP
+    targetPort: 27017
+  selector:
+    app: reddit
+    component: mongo
+
+```
+Проверяем пробрасываем порт на ui pod
+```bash
+kubectl port-forward ui  9292:9292 
+```
+Заходим на http://locahost:9292
+
+Не доступен blog post
+```http
+Can't show blog posts,some problems with the post service. Refresh& 
+```
+Решаем проблемму с помощью сервисов. Делаем service для comment и post.
+
+##### comment-mongodb-service.yml
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: comment-db
+  labels:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+spec:
+  ports:
+  - port: 27017
+    protocol: TCP
+    targetPort: 27017
+  selector:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+```
+##### post-mongodb-service.yml
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: post-db
+  labels:
+    app: reddit
+    component: mongo
+    post-db: "true"
+spec:
+  ports:
+  - port: 27017
+    protocol: TCP
+    targetPort: 27017
+  selector:
+    app: reddit
+    component: mongo
+    post-db: "true"
+```
+##### mongo-deployment.yml
+```yml
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: mongo
+  labels:
+    app: reddit
+    component: mongo
+    comment-db: "true"
+    post-db: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongo
+  template:
+    metadata:
+     name: mongo
+     labels:
+       app: reddit
+       component: mongo
+       comment-db: "true"
+       post-db: "true"
+    spec:
+      containers:
+      - image: mongo:3.2
+        name: mongo
+        volumeMounts:
+        - name: mongo-persistent-storage
+          mountPath: /data/db
+      volumes:
+      - name: mongo-persistent-storage
+        emptyDir: {}
+```
+##### Доступ к ui-сервису снаружи.
+
+В ui-service.yml  добавляем новый тип service NodePort.
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: reddit
+    component: ui
+spec:
+  type: NodePort      
+  ports:  
+  - port: 9292
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+```
+Проверка
+```bash
+$ minikube service ui
+
+|-------------|----------------------|-----------------------------|
+|  NAMESPACE  |         NAME         |             URL             |
+|-------------|----------------------|-----------------------------|
+| default     | comment              | No node port                |
+| default     | comment-db           | No node port                |
+| default     | kubernetes           | No node port                |
+| default     | mongodb              | No node port                |
+| default     | post                 | No node port                |
+| default     | post-db              | No node port                |
+| default     | ui                   | http://192.168.99.128:31400 |
+| kube-system | kube-dns             | No node port                |
+|-------------|----------------------|-----------------------------|
+```
+#### Отделим среду для разработки приложения от всего остального кластера, создадим Namespace dev. 
+##### dev-namespace.yml
+```yml
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+
+$ kubectl apply -f dev-namespace.yml
+```
+
+Запускаем приложение в namespace.
+```bash
+$ kubectl apply -n dev -f kubernates/reddit
+```
+Проверяем  что запустилось, смотрим результат.
+```bash
+$ minikube service  ui -n dev
+```
+```http
+
+Opening kubernetes service dev/ui in default browser...
+   [1]Microservices Reddit in dev ui-5769658b67-hzglw container
+
+  Menu
+
+     * [2]All posts
+     * [3]New post
+```
+Добавим инфу об окружении внутрь контейнера UI
+```yml
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: ui
+ ...
+   spec:
+      containers:
+      - image: verty/ui
+        name: ui
+        env:
+        - name: ENV
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+
+```
+#### Разворачиваем Kubernetes
+
+В gcloud console, переходим в “kubernetes clusters”
+Создаем кластер со следующими настройками.
+
+- Версия кластера  - 1.8.10-gke.0
+- Тип машины - небольшая машина (1,7 ГБ) (для экономии ресурсов)
+- Размер - 2
+- Базовая аутентификация - отключена
+- Устаревшие права доступа - отключено
+- Панель управления Kubernetes - отключено
+- Размер загрузочного диска - 20 ГБ 
+
+После создания  подключаемся к GKE для запуска  приложения,
+убедимся что подключились к кластеру
+```bash
+kubectl config current-context
+
+gke_docker-224713_europe-west1-b_standard-cluster-1
+```
+Запустим  приложение в GKE
+Создадим dev namespace. 
+```bash 
+$ kubectl apply -f ./kubernetes/reddit/dev-namespace.yml 
+```
+Задеплоим все компоненты приложения в namespace dev.
+```bash
+$ kubectl apply -f ./kubernetes/reddit/ -n dev
+```
+Откроем Reddit в правила брандмауэра.
+
+Найдем внешний ip-адрес любой ноды из кластера
+```bash
+$ kubectl get nodes -o wide 
+ 
+NAME                                                STATUS   ROLES    AGE   VERSION          EXTERNAL-IP     OS-IMAGE                             KERNEL-VERSION   CONTAINER-RUNTIME
+gke-standard-cluster-1-default-pool-2dd150ba-ljhm   Ready    <none>   4d    v1.10.11-gke.1   35.233.31.88    Container-Optimized OS from Google   4.14.65+         docker://17.3.2
+gke-standard-cluster-1-default-pool-2dd150ba-qwwj   Ready    <none>   4d    v1.10.11-gke.1   35.195.171.80   Container-Optimized OS from Google   4.14.65+         docker://17.3.2
+```
+Порт публикации сервиса ui 
+```bash
+$ kubectl describe service ui -n dev | grep NodePort 
+
+Type:                     NodePort
+NodePort:                 <unset>  31689/TCP
+```
+Проверяем по адресу
+```http
+http://35.233.31.88:31689
+
+   [1]Microservices Reddit in dev ui-557c59b75f-kkz5b container
+
+  Menu
+
+     * [2]All posts
+     * [3]New post
+
 ```
 
