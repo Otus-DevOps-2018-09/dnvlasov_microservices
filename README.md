@@ -2601,7 +2601,7 @@ $ kubectl apply -f ./kubernetes/reddit/ -n dev
 $ kubectl get nodes -o wide 
  
 NAME                                                STATUS   ROLES    AGE   VERSION          EXTERNAL-IP     OS-IMAGE                             KERNEL-VERSION   CONTAINER-RUNTIME
-gke-standard-cluster-1-default-pool-2dd150ba-ljhm   Ready    <none>   4d    v1.10.11-gke.1   35.233.31.88    Container-Optimized OS from Google   4.14.65+         docker://17.3.2
+gke-standard-cluster-1-default-pool-2dd150ba-ljhm   Ready    <none>   4d    v1.10.11-gke.1   35.240.56.126    Container-Optimized OS from Google   4.14.65+         docker://17.3.2
 gke-standard-cluster-1-default-pool-2dd150ba-qwwj   Ready    <none>   4d    v1.10.11-gke.1   35.195.171.80   Container-Optimized OS from Google   4.14.65+         docker://17.3.2
 ```
 Порт публикации сервиса ui 
@@ -2613,7 +2613,7 @@ NodePort:                 <unset>  31689/TCP
 ```
 Проверяем по адресу
 ```http
-http://35.233.31.88:31689
+http://35.240.56.126:31689
 
    [1]Microservices Reddit in dev ui-557c59b75f-kkz5b container
 
