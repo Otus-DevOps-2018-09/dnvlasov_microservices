@@ -1,7 +1,7 @@
 ---
 service:
-  internalPort: 9292
-  externalPort: 9292
+  internalPort: 5000
+  externalPort: 5000
 
 image:
    repository: verty/post
@@ -14,3 +14,4 @@ postHost:
 postPort:
 commentHost:
 commentPort:
+
