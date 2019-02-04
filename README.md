@@ -3051,3 +3051,694 @@ pvc-8ab285e7-2401-11e9-b2db-42010a84011e   15Gi       RWO            Delete     
 reddit-mongo-disk                          25Gi       RWO            Retain           Available                                                       12h
 ```
 
+### ДЗ №24
+
+#### Helm 
+
+Создем  файл tiller.yml 
+```yml
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tiller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: tiller
+    namespace: kube-system
+```
+Применим его.
+```bash 
+$ kubectl apply -f tiller.yml 
+```
+Запустим tiller-сервер
+```bash
+$ helm init --service-account tiller 
+```
+Проверим 
+```bash
+$ kubectl get pods -n kube-system --selector app=helm 
+
+NAME                             READY   STATUS    RESTARTS   AGE
+tiller-deploy-689d79895f-f22hj   1/1     Running   0          3d
+```
+
+#### Charts
+
+Создаем директорию  Charts co следующей структурой директорий
+```bash
+
+kubernetes/Charts/
+├── comment
+├── post
+├── reddit
+└── ui
+
+```
+Создаем файл-описание chart’а
+```
+
+---
+name: ui
+version: 1.0.0
+description: OTUS reddit application UI
+maintainers:
+         - name: Dmitry Mischenko
+           email: my@mail.com
+appVersion: 1.0
+
+```
+1. Создаем директорию ui/templates
+2. Перенесите в неё все манифесты, разработанные ранее для
+сервиса ui (ui-service, ui-deployment, ui-ingress) 
+3. Переименуем их (уберем префикс “ui-“) и поменяем
+расширение на .yaml
+```bash
+
+kubernetes/Charts/ui/
+├── Chart.yaml
+├── templates
+│   ├── deployment.yaml
+│   ├── ingress.yaml
+│   └── service.yaml
+```
+Установим Chart 
+```bash
+$ helm install --name test-ui-1 ui/ 
+```
+Просмотрим что получилось 
+```bash
+$ helm ls
+
+NAME       	REVISION	UPDATED                 	STATUS  	CHART       	APP VERSION	NAMESPACE
+test-ui  	2       	Sat Feb  2 00:31:41 2019	DEPLOYED	test-ui-0.1.0	           	default  
+```
+Шаблонизируем Chart.
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-{{ .Chart.Name }}
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  type: NodePort      
+  ports:  
+  - port: {{ .Values.service.externalPort }}  
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }} 
+```
+Шаблонизируем подобным образом остальные сущности
+```yml
+
+kubernetes/Charts/ui/templates/deployment.yaml
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name:  {{ .Release.Name }}-{{ .Chart.Name }} 
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  replicas: 3
+  startegy:
+          type: Recreate  
+  selector:
+    matchLabels:
+      app: reddit
+      component: ui
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      name: ui-pod
+      labels:
+        app: reddit
+        component: ui
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - image: verty/ui
+        name: ui
+        ports:
+          - containerPort:   
+            name: ui
+            protocol: TCP
+        env:
+        - name: ENV
+           valueFrom:
+             fieldRef:
+               fieldPath: metadata.namespace
+
+
+kubernetes/Charts/ui/templates/ingress.yaml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+   name: {{ .Release.Name }}-{{ .Chart.Name }}
+   annotations:
+     kubernetes.io/ingress.class: "gce"  
+spec:
+  rules:
+  - http:
+     paths:
+     - path: /*
+       backend:
+          serviceName: {{ .Release.Name }}-{{ .Chart.Name }}
+          servicePort: 9292  
+```
+Установим несколько релизов ui 
+```bash
+$ helm install ui --name ui-1
+$ helm install ui --name ui-2
+$ helm install ui --name ui-3 
+```
+Смотрим процессы ingresa
+```bash
+$ kubectl get ingress 
+
+NAME                  HOSTS   ADDRESS          PORTS   AGE
+ui-1-ui               *       35.233.15.11     80      2d
+ui-2-ui               *       35.190.33.14     80      2d
+ui-3-ui               *       35.244.132.114   80      2d
+```
+По IP-адресам можно попасть на разные релизы ui приложений.
+
+##### Кастомизируем установку своими переменными (образ и порт)
+```yml
+ 
+kubernetes/Charts/ui/templates/deployment.yaml
+
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name:  {{ .Release.Name }}-{{ .Chart.Name }}
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  replicas: 3
+  startegy:
+          type: Recreate  
+  selector:
+    matchLabels:
+      app: reddit
+      component: ui
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      name: ui-pod
+      labels:
+        app: reddit
+        component: ui
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - image:  "{{ .Values.image.repository }}/ui:{{ .Values.image.tag }}"
+        name: ui
+        ports:
+          - containerPort:  {{ .Values.service.internalPort }} 
+            name: ui
+            protocol: TCP
+        env:
+        - name: ENV
+          valueFrom:
+             fieldRef:
+              fieldPath: metadata.namespace
+
+
+kubernetes/Charts/ui/templates/service.yaml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-{{ .Chart.Name }}
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  type: NodePort      
+  ports:  
+  - port: {{ .Values.service.externalPort }}  
+    protocol: TCP
+    targetPort: {{ .Values.service.internalPort }} 
+  selector:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }} 
+
+
+kubernetes/Charts/ui/templates/ingress.yaml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+   name: {{ .Release.Name }}-{{ .Chart.Name }}
+   annotations:
+     kubernetes.io/ingress.class: "gce"  
+spec:
+  rules:
+  - http:
+     paths:
+     - path: /*
+       backend:
+          serviceName: {{ .Release.Name }}-{{ .Chart.Name }}
+          servicePort: {{ .Values.service.externalPort }}  
+```
+Определим значения собственных переменных 
+```yml
+kubernetes/Charts/ui/values.yaml
+
+---
+service:
+  internalPort: 9292
+  externalPort: 9292
+
+image:
+   repository: verty/ui
+   tag: latest
+```
+Обновляем
+```bash
+$ helm upgrade ui-1 ui/
+$ helm upgrade ui-2 ui/
+$ helm upgrade ui-3 ui/
+```
+Собран Chart для развертывания ui-компоненты
+приложения. Он  имеет следующую структуру.
+```bash
+
+kubernetes/Charts/ui
+├── Chart.yaml
+├── templates
+│   ├── deployment.yaml
+│   ├── ingress.yaml
+│   └── service.yaml
+└── values.yaml
+```
+Собраем пакеты для остальных компонент
+post,comment
+
+Итоговая структура выглядет так: 
+```bash
+
+kubernetes/Charts/
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+```
+Использование "Helper" шаблонов, располагаюся в файле "_helpers.tpl"
+```tpl
+
+{{- define "comment.fullname" -}}
+{{- printf "%s-%s" .Release.Name .Chart.Name }}
+{{- end -}} 
+```
+Которая в результате выдаст то же, что и:
+```tpl
+{{ .Release.Name }}-{{ .Chart.Name }}
+```
+Меняем в соответствующие строчки в файле, чтобы
+использовать helper
+```yml
+
+kubernetes/Charts/comment/templates/service.yaml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "comment.fullname" . }}
+  labels:
+    app: reddit
+    component: comment
+    release: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:  
+  - port: {{ .Values.service.externalPort }}  
+    protocol: TCP
+    targetPort: {{ .Values.service.internalPort }} 
+  selector:
+    app: reddit
+    component: comment
+    release: {{ .Release.Name }}
+```
+Структура становится следующая: 
+```bash
+
+kubernetes/Charts/
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── _helpers.tpl
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+
+```
+#### Управление зависимостями 
+1) Создаем reddit/Chart.yaml
+```yaml
+
+name: reddit
+version: 0.1.0
+description: OTUS sample reddit application
+maintainers:
+  - name: Dmitrii Vlasov
+    email: gcp@moslex.ru
+```
+2) Пустой reddit/values.yaml
+
+В директории Chart’а reddit создадим файл
+```yaml
+
+dependencies:
+  - name: ui
+    version: 1.0.0
+    repository: file://../ui
+  - name: post
+    version: 1.0.0
+    repository: file://../post
+  - name: comment
+    version: 1.0.0
+    repository: file://../comment
+```
+Нужно загрузить зависимости
+```bash
+$ helm dep update
+```
+1) Появится файл requirements.lock с фиксацией зависимостей
+2) Будет создана директория charts с зависимостями в виде архивов
+Структура станет следующей:
+```bash
+
+kubernetes/Charts/reddit/
+├── charts
+│   ├── comment-1.0.0.tgz
+│   ├── mongodb-0.4.18.tgz
+│   ├── post-1.0.0.tgz
+│   └── ui-1.0.0.tgz
+├── Chart.yaml
+├── requirements.lock
+├── requirements.yaml
+└── values.yaml
+```
+Chart для базы данных возьмем готовый. 
+1) Найдем Chart в общедоступном репозитории
+```bash
+$ helm search mongo
+
+NAME                     	CHART VERSION	APP VERSION	DESCRIPTION                                                 
+stable/mongodb           	5.3.1        	4.0.5      	NoSQL document-oriented database that stores JSON-like do...
+stable/mongodb-replicaset	3.9.0        	3.6        	NoSQL document-oriented database that stores JSON-like do...
+stable/unifi             	0.2.8        	5.9.29     	Ubiquiti Network's Unifi Controller                         
+```
+2) добавим в reddit/requirements.yaml
+```yaml
+
+dependencies:
+  - name: ui
+    version: 1.0.0
+    repository: file://../ui
+  - name: post
+    version: 1.0.0
+    repository: file://../post
+  - name: comment
+    version: 1.0.0
+    repository: file://../comment
+  - name: mongodb
+    version: 0.4.18
+    repository: https://kubernetes-charts.storage.googleapis.com 
+```
+3) Выгрузим зависимости
+```bash
+$ helm dep update 
+```
+Установим приложение:
+```bash
+$ helm install reddit --name reddit-test 
+```
+Смотрим адресс с помощью ingress
+```
+ 
+NAME                  HOSTS   ADDRESS          PORTS   AGE
+reddit-test-comment   *                        80      3d
+reddit-test-post      *                        80      3d
+reddit-test-ui        *       35.244.132.114   80      3d
+```
+Проверяем работоспособность приложения.
+```http
+elinks 35.244.132.114
+
+
+   [1]Microservices Reddit in default reddit-test-ui-7d7fbdb6c9-pkjjt
+   container
+
+    1
+
+  [2]Работает!
+
+    01-02-2019
+    21:32
+
+   [3]Go to the link
+
+  Menu
+
+     * [4]All posts
+     * [5]New post
+
+References
+
+   Visible links
+   1. http://35.244.132.114/
+   2. http://35.244.132.114/post/5c54baee4406720014dab941
+   3. http://#/
+   4. http://35.244.132.114/
+   5. http://35.244.132.114/newa
+```
+#### Управление зависимостями
+
+Добавим в ui/templates/deployments.yaml 
+```yaml
+---
+   spec:
+      containers:
+	...
+       env:
+        - name: POST_SERVICE_HOST
+          value: {{  .Values.postHost | default (printf "%s-post" .Release.Name) }}
+        - name: POST_SERVICE_PORT
+          value: {{  .Values.postPort | default "5000" | quote }}
+        - name: COMMENT_SERVICE_HOST
+          value: {{  .Values.commentHost | default (printf "%s-comment" .Release.Name) }}
+        - name: COMMENT_SERVICE_PORT
+          value: {{  .Values.commentPort | default "9292" | quote }}
+        - name: ENV
+```
+Добавим в ui/values.yaml
+```yaml
+---
+
+postHost:
+postPort:
+commentHost:
+commentPort:
+```
+Задавать  переменные для зависимостей прямо в values.yaml самого Chart’а reddit. 
+```yaml
+
+comment:
+  image:
+    repository: verty/comment
+    tag: latest
+  service:
+    externalPort: 9292
+
+post:
+   image:
+     repository: verty/post
+     tag: latest
+   service:
+     externalPort: 5000
+
+ui:
+  image:
+    repository: verty/ui
+    tag: latest
+  service:
+    externalPort: 9292
+```
+После обновления UI - нужно обновить зависимости чарта reddit. 
+```bash
+$ helm dep update reddit 
+
+Hang tight while we grab the latest from your chart repositories...
+...Unable to get an update from the "local" chart repository (http://127.0.0.1:8879/charts):
+	Get http://127.0.0.1:8879/charts/index.yaml: dial tcp 127.0.0.1:8879: connect: connection refused
+...Successfully got an update from the "stable" chart repository
+Update Complete. ⎈Happy Helming!⎈
+Saving 4 charts
+Downloading mongodb from repo https://kubernetes-charts.storage.googleapis.com
+Deleting outdated charts
+```
+Обновим релиз, установленный в k8s
+```bash
+$ helm upgrade reddit-test ./reddit
+
+
+Release "reddit-test" has been upgraded. Happy Helming!
+LAST DEPLOYED: Mon Feb  4 16:59:16 2019
+NAMESPACE: default
+STATUS: DEPLOYED
+
+RESOURCES:
+==> v1/Pod(related)
+NAME                                  READY  STATUS   RESTARTS  AGE
+reddit-test-comment-5cd8f9ff8-2tjhc   0/1    Evicted  0         2d2h
+reddit-test-comment-5cd8f9ff8-59rjz   0/1    Evicted  0         8h
+reddit-test-comment-5cd8f9ff8-bp4r6   0/1    Evicted  0         34h
+reddit-test-comment-5cd8f9ff8-d28b9   0/1    Evicted  0         18h
+reddit-test-comment-5cd8f9ff8-d6g4w   0/1    Evicted  0         40h
+reddit-test-comment-5cd8f9ff8-l65p6   0/1    Evicted  0         13h
+reddit-test-comment-5cd8f9ff8-m42vw   0/1    Evicted  0         3d
+reddit-test-comment-5cd8f9ff8-p95kb   0/1    Evicted  0         45h
+reddit-test-comment-5cd8f9ff8-rqs92   0/1    Evicted  0         23h
+reddit-test-comment-5cd8f9ff8-rw26x   0/1    Evicted  0         29h
+reddit-test-comment-5cd8f9ff8-w4j6r   0/1    Evicted  0         2d8h
+reddit-test-comment-5cd8f9ff8-wm9mt   0/1    Evicted  0         2d13h
+reddit-test-comment-5cd8f9ff8-x7cnr   1/1    Running  0         171m
+reddit-test-mongodb-7cc9bcc5bb-jsqzt  1/1    Running  0         3d
+reddit-test-post-6574b88755-qtx87     1/1    Running  0         3d
+reddit-test-ui-7d7fbdb6c9-frsdp       1/1    Running  0         2d16h
+reddit-test-ui-7d7fbdb6c9-pkjjt       1/1    Running  0         2d16h
+reddit-test-ui-7d7fbdb6c9-pmr5t       1/1    Running  0         2d16h
+
+==> v1/Secret
+NAME                 TYPE    DATA  AGE
+reddit-test-mongodb  Opaque  2     3d
+
+==> v1/PersistentVolumeClaim
+NAME                 STATUS  VOLUME                                    CAPACITY  ACCESS MODES  STORAGECLASS  AGE
+reddit-test-mongodb  Bound   pvc-5f5a472a-2623-11e9-a64f-42010a8402b4  8Gi       RWO           standard      3d
+
+==> v1/Service
+NAME                 TYPE       CLUSTER-IP    EXTERNAL-IP  PORT(S)         AGE
+reddit-test-comment  ClusterIP  10.7.240.172  <none>       9292/TCP        3d
+reddit-test-mongodb  ClusterIP  10.7.247.102  <none>       27017/TCP       3d
+reddit-test-post     ClusterIP  10.7.255.28   <none>       5000/TCP        3d
+reddit-test-ui       NodePort   10.7.253.33   <none>       9292:30990/TCP  3d
+
+==> v1beta2/Deployment
+NAME                 DESIRED  CURRENT  UP-TO-DATE  AVAILABLE  AGE
+reddit-test-comment  1        1        1           1          3d
+reddit-test-post     1        1        1           1          3d
+reddit-test-ui       3        3        3           3          3d
+
+==> v1beta1/Deployment
+NAME                 DESIRED  CURRENT  UP-TO-DATE  AVAILABLE  AGE
+reddit-test-mongodb  1        1        1           1          3d
+
+==> v1beta1/Ingress
+NAME                 HOSTS  ADDRESS         PORTS  AGE
+reddit-test-comment  *      80              3d
+reddit-test-post     *      80              3d
+reddit-test-ui       *      35.244.132.114  80  3d
+
+```
+Проверяем UI.
+```http
+
+   [1]Microservices Reddit in default reddit-test-ui-7d7fbdb6c9-pkjjt
+   container
+
+    1
+
+  [2]Работает!
+
+    01-02-2019
+    21:32
+
+   [3]Go to the link
+
+  Menu
+
+     * [4]All posts
+     * [5]New post
+
+References
+
+   Visible links
+   1. http://35.244.132.114/
+   2. http://35.244.132.114/post/5c54baee4406720014dab941
+   3. http://#/
+   4. http://35.244.132.114/
+   5. http://35.244.132.114/new
+```
+#### GitLab + Kubernetes
+
