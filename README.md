@@ -3742,3 +3742,368 @@ References
 ```
 #### GitLab + Kubernetes
 
+Создаем  GKE-кластер
+
+Делаем новый пулузлов: 
+- bigpool 
+- 1 узел типаn n1-standard-2 (7,5 Гб, 2 виртуальныхЦП) 
+- Размердиска 40 Гб
+
+Устанавливаем  Gitlab  помощью Helm Chart’а из пакета Omnibus
+```bash
+$ helm repo add gitlab https://charts.gitlab.io
+```
+Качаем Chart
+```
+$ helm fetch gitlab/gitlab-omnibus --version 0.1.37 --untar
+$ cd gitlab-omnibus 
+```
+Правим yml  
+```yml
+gitlab-omnibus/values.yaml 
+---
+baseDomain: example.com
+legoEmail: you@example.com
+
+gitlab-omnibus/templates/gitlab/gitlab-svc.yaml 
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "fullname" . }}
+...
+   selector:
+    name: {{ template "fullname" . }}
+  ports:
+...
+    - name: prometheus
+      port: 9090
+      targetPort: prometheus
+    - name: web
+      port: 80
+      targetPort: workhorse
+
+gitlab-omnibus/templates/gitlab-config.yaml
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "fullname" . }}-config
+  labels:
+    app: {{ template "fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+data:
+  external_scheme: http
+  external_hostname: {{ template "fullname" . }}
+
+gitlab-omnibus/templates/ingress/gitlab-ingress.yaml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+...
+spec:
+  tls:
+...
+    rules:
+  - host: {{ template "fullname" . }}
+    http:
+      paths:
+```
+
+Устанавливаем gitlab
+```bash
+$ helm install --name gitlab . -f values.yaml   
+```
+Смотрим выданный IP-адрес ingress-контроллера nginx.
+```bash
+$ kubectl get service -n nginx-ingress nginx 
+
+NAME    TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                                   AGE
+nginx   LoadBalancer   10.23.255.237   35.246.112.70   80:31846/TCP,443:30749/TCP,22:30505/TCP   1d
+```
+Добавляем его в локальный файл на машине которой будем ходить на gitlab
+```
+echo 35.246.112.70 gitlab-gitlab staging production >> C:\Windows\System32\drivers\etc\hosts
+
+```
+Проверяем что gitlab поднялся
+```bash
+NAME                                        READY   STATUS    RESTARTS   AGE
+gitlab-gitlab-6654b8f4c5-hvmr8              1/1     Running   0          1d
+```
+Идем по адресу  http://gitlb-gitlab
+
+#### Запустим проект
+
+Создаем директорию Gitlab_ci со следующей структурой директорий
+```bash
+Gitlab_ci
+├── comment
+├── post
+├── reddit-deploy
+└── ui
+```
+Переносим исходные коды сервиса ui в Gitlab_ci/ui 
+
+```bash
+
+Gitlab_ci/ui/
+├── build_info.txt
+├── config.ru
+├── docker_build.sh
+├── Dockerfile
+├── Gemfile
+├── Gemfile.lock
+├── helpers.rb
+├── middleware.rb
+├── ui_app.rb
+├── VERSION
+└── views
+    ├── create.haml
+    ├── index.haml
+    ├── layout.haml
+    └── show.haml
+```
+В директории Gitlab_ci/ui:
+1) Инициализируем локальный git-репозиторий
+```bash
+$ git init 
+```
+2) Добавим удаленный репозиторий
+```bash
+$ git remote add origin http://gitlab-gitlab/verty/ui.git
+```
+3) Закоммитим и отправим в gitlab
+```bash
+$ git add .
+$ git commit -m “init”
+$ git push origin master
+```
+Делаем то же самое для post и comment.
+Переносим содержимое директории Charts (папки ui, post,
+comment, reddit) в Gitlab_ci/reddit-deploy 
+
+1) Создаем файл Gitlab_ci/ui/.gitlab-ci.yml
+
+```bash
+mage: alpine:latest
+
+stages:
+  - build
+  - test
+  - release
+  - cleanup
+
+build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:dind
+  script:
+    - setup_docker
+    - build
+  variables:
+    DOCKER_DRIVER: overlay2
+  only:
+    - branches
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:dind
+  script:
+    - setup_docker
+    - release
+  only:
+    - master
+
+.auto_devops: &auto_devops |
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function release() {
+
+    echo "Updating docker images ..."
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    echo ""
+  }
+
+  function build() {
+
+    echo "Building Dockerfile-based application..."
+    echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    echo "Pushing to GitLab Container Registry..."
+    docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    echo ""
+  }
+
+before_script:
+  - *auto_devops
+```
+
+2) Комитем и запушим в gitlab
+3) В Pipeline работает
+
+Добавляем .gitlab-ci.yml в Post и Comment.
+Смотрим что сборка прошла успешно
+
+
+Дадим возможность разработчику запускать отдельное
+окружение в Kubernetes по коммиту в feature-бранч. 
+```yml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+   name: {{ template "ui.fullname" }}
+   annotations:
+     kubernetes.io/ingress.class: {{ .Values.ingress.class }}  
+spec:
+  rules:
+  - host: {{ .Values.ingress.host | default .Release.Name }}    
+    http:
+     paths:
+     - path: /
+       backend:
+          serviceName: {{ template "ui.fullname" }}
+          servicePort: {{ .Values.service.externalPort }}  
+
+```
+Обновим конфиг ингресса для сервиса UI:
+```yml
+
+---
+service:
+  internalPort: 9292
+  externalPort: 9292
+
+image:
+  repository: verty/ui
+  tag: latest
+
+ingress:
+  class: nginx
+
+postHost:
+postPort:
+commentHost:
+commentPort:
+```
+
+Дадим возможность разработчику запускать отдельное
+окружение в Kubernetes по коммиту в feature-бранч. 
+
+1) Создадим новый бранч в репозитории ui
+```bash
+$ git checkout -b feature/3
+```
+2) Обновим ui/.gitlab-ci.yml файл 
+3) Закоммитим и запушем изменения
+```bash
+$ git commit -am "Add review feature"
+$ git push origin feature/3
+```
+Можем увидеть какие релизы запущены
+```bash
+
+NAME                    	REVISION	UPDATED                 	STATUS  	CHART                	APP VERSION	NAMESPACE
+gitlab                  	1       	Thu Feb  7 11:05:59 2019	DEPLOYED	gitlab-omnibus-0.1.37	           	default  
+review-verty-ui-f-nwgt56	1       	Fri Feb  8 13:40:01 2019	DEPLOYED	reddit-0.1.0         	           	review  
+```
+Созданные для таких целей окружения временны, их требуется
+“убивать”, когда они больше не нужны.
+ 
+Добавим в .gitlab-ci.yml
+```bash
+ 
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+    - branches
+    kubernetes: active
+  except:
+  - master
+
+```
+Добавим также
+```yml
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+review:
+  stage: review
+... 
+  environment:
+     name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+     url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+     on_stop: stop_review 
+```
+Добавим функцию удаления окружения 
+.auto_devops: &auto_devops |
+...
+  function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+}
+```
+Пушем измениения в git
+
