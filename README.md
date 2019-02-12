@@ -3826,9 +3826,9 @@ $ kubectl get service -n nginx-ingress nginx
 NAME    TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                                   AGE
 nginx   LoadBalancer   10.23.255.237   35.246.112.70   80:31846/TCP,443:30749/TCP,22:30505/TCP   1d
 ```
-Добавляем его в локальный файл на машине которой будем ходить на gitlab
+Добавляем его в локальный файл /etc/hosts
 ```
-echo 35.246.112.70 gitlab-gitlab staging production >> C:\Windows\System32\drivers\etc\hosts
+echo "35.246.112.70 gitlab-gitlab staging production" >> /etc/hosts
 
 ```
 Проверяем что gitlab поднялся
@@ -4106,4 +4106,26 @@ review:
 }
 ```
 Пушем измениения в git
+
+Заходим в Pipelines запускаем удаление окружения.
+```bash
+
+NAME  	REVISION	UPDATED                 	STATUS  	CHART                	APP VERSION	NAMESPACE
+gitlab	1       	Thu Feb  7 11:05:59 2019	DEPLOYED	gitlab-omnibus-0.1.37	           	default  
+```
+##### Теперь создадим staging и production среды для работы приложения
+Создадим файл reddit-deploy/.gitlab-ci.yml
+
+Пушим его в репозиторий  reddit-deploy  ветку master
+
+Смотрим что в helm также все видно
+```bash
+$ helm ls
+
+NAME      	REVISION	UPDATED                 	STATUS  	CHART                	NAMESPACE 
+gitlab    	1       	Mon Feb 11 10:28:08 2019	DEPLOYED	gitlab-omnibus-0.1.37	default   
+production	8       	Tue Feb 12 10:30:36 2019	DEPLOYED	reddit-0.1.0         	production
+staging   	10      	Tue Feb 12 10:37:35 2019	DEPLOYED	reddit-0.1.0         	staging   
+
+
 
