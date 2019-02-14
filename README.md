@@ -4128,4 +4128,175 @@ production	8       	Tue Feb 12 10:30:36 2019	DEPLOYED	reddit-0.1.0         	prod
 staging   	10      	Tue Feb 12 10:37:35 2019	DEPLOYED	reddit-0.1.0         	staging   
 
 
+### ДЗ №25 Kubernetes. Мониторинг и логирование 
+
+Из Helm-чарта установим ingress-контроллер nginx
+
+Смтрим IP-адрес, выданный nginx’у
+```bash
+kubectl get svc
+
+NAME                                  TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                      AGE
+nginx-nginx-ingress-controller        LoadBalancer   10.51.253.45    35.189.75.167   80:30280/TCP,443:32385/TCP   1h
+```
+Добавим в /etc/hosts 
+```bash
+35.198.75.167 reddit reddit-prometheus reddit-grafana reddit-non-prod production reddit-kibana staging prod
+```
+Загрузим prometheus локально в Charts каталог
+```bash
+$ cd kubernetes/charts && helm fetch —-untar stable/prometheus
+```
+Создаем внутри директории чарта файл custom_values.yml
+
+Запустим Prometheus в k8s из charsts/prometheus
+```bash
+$ helm upgrade prom . -f custom_values.yml --install
+
+Для сбора  информации будем использовать сервис
+kube-state-metrics. Он входит в чарт Prometheus. Включим его.
+prometheus/custom_values.ym
+
+```yml
+kubeStateMetrics:
+## If false, kube-state-metrics will not be installed
+##
+enabled: true
+```
+Обновим релиз
+```bash
+helm upgrade prom . -f custom_values.yml --install
+```
+Включаем поды node-exporter в custom_values.yml
+```yml
+nodeExporter:
+  enabled: true
+```
+Запустим приложение из helm чарта reddit
+```bash
+$ helm upgrade reddit-test ./reddit —install
+$ helm upgrade production --namespace production ./reddit --install
+$ helm upgrade staging --namespace staging ./reddit —install
+```
+Модернизируем конфиг prometheus
+Используем действие keep, чтобы оставить
+только эндпоинты сервисов с метками “app=reddit”
+```yml
+custom_values.yml
+	- job_name: 'reddit-endpoints'
+	  kubernetes_sd_configs:
+	    - role: endpoints
+	  relabel_configs:
+	    - source_labels: [__meta_kubernetes_service_label_app]
+	      action: keep
+	      regex: reddit
+```
+Обновиь релиз prometheus
+```bash
+$ helm upgrade prom . -f custom_values.yml --install
+```
+Добавим метрики k8s
+```yml
+            - action: labelmap
+              regex: __meta_kubernetes_service_label_(.+)
+```
+Обновим релиз prometheus
+```bash
+$ helm upgrade prom . -f custom_values.yml --install
+```
+Теперь появились лейблы k8s, присвоенные POD’ам
+
+Добавим еще label’ы для prometheus и обновим helm-релиз
+```yml
+ - source_labels: [__meta_kubernetes_namespace]
+   target_label: kubernetes_namespace
+ - source_labels: [__meta_kubernetes_service_name]
+   target_label: kubernetes_name
+```
+
+Отделяем target-ы компонент друг от друга (по
+окружениям, по самим компонентам), а также выключать и
+включать опцию мониторинга для них с помощью все тех же label-ов
+```yml
+- job_name: 'reddit-production'
+  kubernetes_sd_configs:
+    - role: endpoints
+  relabel_configs:
+     - action: labelmap
+       regex: __meta_kubernetes_service_label_(.+)
+     - source_labels: [__meta_kubernetes_service_label_app, __meta_kubernetes_namespace]
+       action: keep
+       regex: reddit;(production|staging)+
+     - source_labels: [__meta_kubernetes_namespace]
+       target_label: kubernetes_namespace
+     - source_labels: [__meta_kubernetes_service_name]
+       target_label: kubernetes_name
+```
+Метрики будут отображаться для всех инстансов приложений
+
+Разбиваем  конфигурацию job’а `reddit-endpoints`:
+post-endpoints, commentendpoints, ui-endpoints
+
+```yml 
+
+          - job_name: 'endpoints-post'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: reddit
+          - source_labels: [__meta_kubernetes_service_label_component]
+            action: keep
+            regex: post
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_name
+
+      - job_name: 'endpoints-comment'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: reddit
+          - source_labels: [__meta_kubernetes_service_label_component]
+            action: keep
+            regex: comment
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_name
+
+      - job_name: 'endpoints-ui'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: reddit
+          - source_labels: [__meta_kubernetes_service_label_component]
+            action: keep
+            regex: ui
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_name
+
+```    
+Установим grafana с помощью helm 
+```bash
+$ helm upgrade --install grafana stable/grafana --set "adminPassword=admin" \
+--set "service.type=NodePort" \
+--set "ingress.enabled=true" \
+--set "ingress.hosts={reddit-grafana}"
+```
+Добавим prometheus data-source
 
