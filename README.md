@@ -4126,9 +4126,10 @@ NAME      	REVISION	UPDATED                 	STATUS  	CHART                	NAME
 gitlab    	1       	Mon Feb 11 10:28:08 2019	DEPLOYED	gitlab-omnibus-0.1.37	default   
 production	8       	Tue Feb 12 10:30:36 2019	DEPLOYED	reddit-0.1.0         	production
 staging   	10      	Tue Feb 12 10:37:35 2019	DEPLOYED	reddit-0.1.0         	staging   
+```
 
-
-### ДЗ №25 Kubernetes. Мониторинг и логирование 
+### ДЗ №25 
+#### Kubernetes. Мониторинг и логирование 
 
 Из Helm-чарта установим ingress-контроллер nginx
 
