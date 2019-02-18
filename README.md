@@ -4298,5 +4298,15 @@ $ helm upgrade --install grafana stable/grafana --set "adminPassword=admin" \
 --set "ingress.enabled=true" \
 --set "ingress.hosts={reddit-grafana}"
 ```
-Добавим prometheus data-source
+#### Добавим prometheus data-source
+
+Смотрим адрес сервиса prometheus сервера
+```bash
+$ kubectl get svc
+
+
+NAME                                  TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                      AGE
+prom-prometheus-server                LoadBalancer   10.11.247.75    35.224.121.85   80:30282/TCP 		  12h 
+```
+
 
