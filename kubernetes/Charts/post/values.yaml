@@ -1,0 +1,17 @@
+---
+service:
+  internalPort: 5000
+  externalPort: 5000
+
+image:
+   repository: verty/post
+   tag: latest
+
+ingress:
+   class: nginx
+
+postHost:
+postPort:
+commentHost:
+commentPort:
+

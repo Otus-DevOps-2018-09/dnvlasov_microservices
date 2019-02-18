@@ -3051,3 +3051,1081 @@ pvc-8ab285e7-2401-11e9-b2db-42010a84011e   15Gi       RWO            Delete     
 reddit-mongo-disk                          25Gi       RWO            Retain           Available                                                       12h
 ```
 
+### ДЗ №24
+
+#### Helm 
+
+Создем  файл tiller.yml 
+```yml
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tiller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: tiller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: tiller
+    namespace: kube-system
+```
+Применим его.
+```bash 
+$ kubectl apply -f tiller.yml 
+```
+Запустим tiller-сервер
+```bash
+$ helm init --service-account tiller 
+```
+Проверим 
+```bash
+$ kubectl get pods -n kube-system --selector app=helm 
+
+NAME                             READY   STATUS    RESTARTS   AGE
+tiller-deploy-689d79895f-f22hj   1/1     Running   0          3d
+```
+
+#### Charts
+
+Создаем директорию  Charts co следующей структурой директорий
+```bash
+
+kubernetes/Charts/
+├── comment
+├── post
+├── reddit
+└── ui
+
+```
+Создаем файл-описание chart’а
+```
+
+---
+name: ui
+version: 1.0.0
+description: OTUS reddit application UI
+maintainers:
+         - name: Dmitry Mischenko
+           email: my@mail.com
+appVersion: 1.0
+
+```
+1. Создаем директорию ui/templates
+2. Перенесите в неё все манифесты, разработанные ранее для
+сервиса ui (ui-service, ui-deployment, ui-ingress) 
+3. Переименуем их (уберем префикс “ui-“) и поменяем
+расширение на .yaml
+```bash
+
+kubernetes/Charts/ui/
+├── Chart.yaml
+├── templates
+│   ├── deployment.yaml
+│   ├── ingress.yaml
+│   └── service.yaml
+```
+Установим Chart 
+```bash
+$ helm install --name test-ui-1 ui/ 
+```
+Просмотрим что получилось 
+```bash
+$ helm ls
+
+NAME       	REVISION	UPDATED                 	STATUS  	CHART       	APP VERSION	NAMESPACE
+test-ui  	2       	Sat Feb  2 00:31:41 2019	DEPLOYED	test-ui-0.1.0	           	default  
+```
+Шаблонизируем Chart.
+```yml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-{{ .Chart.Name }}
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  type: NodePort      
+  ports:  
+  - port: {{ .Values.service.externalPort }}  
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }} 
+```
+Шаблонизируем подобным образом остальные сущности
+```yml
+
+kubernetes/Charts/ui/templates/deployment.yaml
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name:  {{ .Release.Name }}-{{ .Chart.Name }} 
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  replicas: 3
+  startegy:
+          type: Recreate  
+  selector:
+    matchLabels:
+      app: reddit
+      component: ui
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      name: ui-pod
+      labels:
+        app: reddit
+        component: ui
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - image: verty/ui
+        name: ui
+        ports:
+          - containerPort:   
+            name: ui
+            protocol: TCP
+        env:
+        - name: ENV
+           valueFrom:
+             fieldRef:
+               fieldPath: metadata.namespace
+
+
+kubernetes/Charts/ui/templates/ingress.yaml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+   name: {{ .Release.Name }}-{{ .Chart.Name }}
+   annotations:
+     kubernetes.io/ingress.class: "gce"  
+spec:
+  rules:
+  - http:
+     paths:
+     - path: /*
+       backend:
+          serviceName: {{ .Release.Name }}-{{ .Chart.Name }}
+          servicePort: 9292  
+```
+Установим несколько релизов ui 
+```bash
+$ helm install ui --name ui-1
+$ helm install ui --name ui-2
+$ helm install ui --name ui-3 
+```
+Смотрим процессы ingresa
+```bash
+$ kubectl get ingress 
+
+NAME                  HOSTS   ADDRESS          PORTS   AGE
+ui-1-ui               *       35.233.15.11     80      2d
+ui-2-ui               *       35.190.33.14     80      2d
+ui-3-ui               *       35.244.132.114   80      2d
+```
+По IP-адресам можно попасть на разные релизы ui приложений.
+
+##### Кастомизируем установку своими переменными (образ и порт)
+```yml
+ 
+kubernetes/Charts/ui/templates/deployment.yaml
+
+
+---
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name:  {{ .Release.Name }}-{{ .Chart.Name }}
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  replicas: 3
+  startegy:
+          type: Recreate  
+  selector:
+    matchLabels:
+      app: reddit
+      component: ui
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      name: ui-pod
+      labels:
+        app: reddit
+        component: ui
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - image:  "{{ .Values.image.repository }}/ui:{{ .Values.image.tag }}"
+        name: ui
+        ports:
+          - containerPort:  {{ .Values.service.internalPort }} 
+            name: ui
+            protocol: TCP
+        env:
+        - name: ENV
+          valueFrom:
+             fieldRef:
+              fieldPath: metadata.namespace
+
+
+kubernetes/Charts/ui/templates/service.yaml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-{{ .Chart.Name }}
+  labels:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }}
+spec:
+  type: NodePort      
+  ports:  
+  - port: {{ .Values.service.externalPort }}  
+    protocol: TCP
+    targetPort: {{ .Values.service.internalPort }} 
+  selector:
+    app: reddit
+    component: ui
+    release: {{ .Release.Name }} 
+
+
+kubernetes/Charts/ui/templates/ingress.yaml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+   name: {{ .Release.Name }}-{{ .Chart.Name }}
+   annotations:
+     kubernetes.io/ingress.class: "gce"  
+spec:
+  rules:
+  - http:
+     paths:
+     - path: /*
+       backend:
+          serviceName: {{ .Release.Name }}-{{ .Chart.Name }}
+          servicePort: {{ .Values.service.externalPort }}  
+```
+Определим значения собственных переменных 
+```yml
+kubernetes/Charts/ui/values.yaml
+
+---
+service:
+  internalPort: 9292
+  externalPort: 9292
+
+image:
+   repository: verty/ui
+   tag: latest
+```
+Обновляем
+```bash
+$ helm upgrade ui-1 ui/
+$ helm upgrade ui-2 ui/
+$ helm upgrade ui-3 ui/
+```
+Собран Chart для развертывания ui-компоненты
+приложения. Он  имеет следующую структуру.
+```bash
+
+kubernetes/Charts/ui
+├── Chart.yaml
+├── templates
+│   ├── deployment.yaml
+│   ├── ingress.yaml
+│   └── service.yaml
+└── values.yaml
+```
+Собраем пакеты для остальных компонент
+post,comment
+
+Итоговая структура выглядет так: 
+```bash
+
+kubernetes/Charts/
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+```
+Использование "Helper" шаблонов, располагаюся в файле "_helpers.tpl"
+```tpl
+
+{{- define "comment.fullname" -}}
+{{- printf "%s-%s" .Release.Name .Chart.Name }}
+{{- end -}} 
+```
+Которая в результате выдаст то же, что и:
+```tpl
+{{ .Release.Name }}-{{ .Chart.Name }}
+```
+Меняем в соответствующие строчки в файле, чтобы
+использовать helper
+```yml
+
+kubernetes/Charts/comment/templates/service.yaml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "comment.fullname" . }}
+  labels:
+    app: reddit
+    component: comment
+    release: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:  
+  - port: {{ .Values.service.externalPort }}  
+    protocol: TCP
+    targetPort: {{ .Values.service.internalPort }} 
+  selector:
+    app: reddit
+    component: comment
+    release: {{ .Release.Name }}
+```
+Структура становится следующая: 
+```bash
+
+kubernetes/Charts/
+├── comment
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+├── post
+│   ├── Chart.yaml
+│   ├── templates
+│   │   ├── deployment.yaml
+│   │   ├── _helpers.tpl
+│   │   ├── ingress.yaml
+│   │   └── service.yaml
+│   └── values.yaml
+└── ui
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── _helpers.tpl
+    │   ├── ingress.yaml
+    │   └── service.yaml
+    └── values.yaml
+
+```
+#### Управление зависимостями 
+1) Создаем reddit/Chart.yaml
+```yaml
+
+name: reddit
+version: 0.1.0
+description: OTUS sample reddit application
+maintainers:
+  - name: Dmitrii Vlasov
+    email: gcp@moslex.ru
+```
+2) Пустой reddit/values.yaml
+
+В директории Chart’а reddit создадим файл
+```yaml
+
+dependencies:
+  - name: ui
+    version: 1.0.0
+    repository: file://../ui
+  - name: post
+    version: 1.0.0
+    repository: file://../post
+  - name: comment
+    version: 1.0.0
+    repository: file://../comment
+```
+Нужно загрузить зависимости
+```bash
+$ helm dep update
+```
+1) Появится файл requirements.lock с фиксацией зависимостей
+2) Будет создана директория charts с зависимостями в виде архивов
+Структура станет следующей:
+```bash
+
+kubernetes/Charts/reddit/
+├── charts
+│   ├── comment-1.0.0.tgz
+│   ├── mongodb-0.4.18.tgz
+│   ├── post-1.0.0.tgz
+│   └── ui-1.0.0.tgz
+├── Chart.yaml
+├── requirements.lock
+├── requirements.yaml
+└── values.yaml
+```
+Chart для базы данных возьмем готовый. 
+1) Найдем Chart в общедоступном репозитории
+```bash
+$ helm search mongo
+
+NAME                     	CHART VERSION	APP VERSION	DESCRIPTION                                                 
+stable/mongodb           	5.3.1        	4.0.5      	NoSQL document-oriented database that stores JSON-like do...
+stable/mongodb-replicaset	3.9.0        	3.6        	NoSQL document-oriented database that stores JSON-like do...
+stable/unifi             	0.2.8        	5.9.29     	Ubiquiti Network's Unifi Controller                         
+```
+2) добавим в reddit/requirements.yaml
+```yaml
+
+dependencies:
+  - name: ui
+    version: 1.0.0
+    repository: file://../ui
+  - name: post
+    version: 1.0.0
+    repository: file://../post
+  - name: comment
+    version: 1.0.0
+    repository: file://../comment
+  - name: mongodb
+    version: 0.4.18
+    repository: https://kubernetes-charts.storage.googleapis.com 
+```
+3) Выгрузим зависимости
+```bash
+$ helm dep update 
+```
+Установим приложение:
+```bash
+$ helm install reddit --name reddit-test 
+```
+Смотрим адресс с помощью ingress
+```
+ 
+NAME                  HOSTS   ADDRESS          PORTS   AGE
+reddit-test-comment   *                        80      3d
+reddit-test-post      *                        80      3d
+reddit-test-ui        *       35.244.132.114   80      3d
+```
+Проверяем работоспособность приложения.
+```http
+elinks 35.244.132.114
+
+
+   [1]Microservices Reddit in default reddit-test-ui-7d7fbdb6c9-pkjjt
+   container
+
+    1
+
+  [2]Работает!
+
+    01-02-2019
+    21:32
+
+   [3]Go to the link
+
+  Menu
+
+     * [4]All posts
+     * [5]New post
+
+References
+
+   Visible links
+   1. http://35.244.132.114/
+   2. http://35.244.132.114/post/5c54baee4406720014dab941
+   3. http://#/
+   4. http://35.244.132.114/
+   5. http://35.244.132.114/newa
+```
+#### Управление зависимостями
+
+Добавим в ui/templates/deployments.yaml 
+```yaml
+---
+   spec:
+      containers:
+	...
+       env:
+        - name: POST_SERVICE_HOST
+          value: {{  .Values.postHost | default (printf "%s-post" .Release.Name) }}
+        - name: POST_SERVICE_PORT
+          value: {{  .Values.postPort | default "5000" | quote }}
+        - name: COMMENT_SERVICE_HOST
+          value: {{  .Values.commentHost | default (printf "%s-comment" .Release.Name) }}
+        - name: COMMENT_SERVICE_PORT
+          value: {{  .Values.commentPort | default "9292" | quote }}
+        - name: ENV
+```
+Добавим в ui/values.yaml
+```yaml
+---
+
+postHost:
+postPort:
+commentHost:
+commentPort:
+```
+Задавать  переменные для зависимостей прямо в values.yaml самого Chart’а reddit. 
+```yaml
+
+comment:
+  image:
+    repository: verty/comment
+    tag: latest
+  service:
+    externalPort: 9292
+
+post:
+   image:
+     repository: verty/post
+     tag: latest
+   service:
+     externalPort: 5000
+
+ui:
+  image:
+    repository: verty/ui
+    tag: latest
+  service:
+    externalPort: 9292
+```
+После обновления UI - нужно обновить зависимости чарта reddit. 
+```bash
+$ helm dep update reddit 
+
+Hang tight while we grab the latest from your chart repositories...
+...Unable to get an update from the "local" chart repository (http://127.0.0.1:8879/charts):
+	Get http://127.0.0.1:8879/charts/index.yaml: dial tcp 127.0.0.1:8879: connect: connection refused
+...Successfully got an update from the "stable" chart repository
+Update Complete. ⎈Happy Helming!⎈
+Saving 4 charts
+Downloading mongodb from repo https://kubernetes-charts.storage.googleapis.com
+Deleting outdated charts
+```
+Обновим релиз, установленный в k8s
+```bash
+$ helm upgrade reddit-test ./reddit
+
+
+Release "reddit-test" has been upgraded. Happy Helming!
+LAST DEPLOYED: Mon Feb  4 16:59:16 2019
+NAMESPACE: default
+STATUS: DEPLOYED
+
+RESOURCES:
+==> v1/Pod(related)
+NAME                                  READY  STATUS   RESTARTS  AGE
+reddit-test-comment-5cd8f9ff8-2tjhc   0/1    Evicted  0         2d2h
+reddit-test-comment-5cd8f9ff8-59rjz   0/1    Evicted  0         8h
+reddit-test-comment-5cd8f9ff8-bp4r6   0/1    Evicted  0         34h
+reddit-test-comment-5cd8f9ff8-d28b9   0/1    Evicted  0         18h
+reddit-test-comment-5cd8f9ff8-d6g4w   0/1    Evicted  0         40h
+reddit-test-comment-5cd8f9ff8-l65p6   0/1    Evicted  0         13h
+reddit-test-comment-5cd8f9ff8-m42vw   0/1    Evicted  0         3d
+reddit-test-comment-5cd8f9ff8-p95kb   0/1    Evicted  0         45h
+reddit-test-comment-5cd8f9ff8-rqs92   0/1    Evicted  0         23h
+reddit-test-comment-5cd8f9ff8-rw26x   0/1    Evicted  0         29h
+reddit-test-comment-5cd8f9ff8-w4j6r   0/1    Evicted  0         2d8h
+reddit-test-comment-5cd8f9ff8-wm9mt   0/1    Evicted  0         2d13h
+reddit-test-comment-5cd8f9ff8-x7cnr   1/1    Running  0         171m
+reddit-test-mongodb-7cc9bcc5bb-jsqzt  1/1    Running  0         3d
+reddit-test-post-6574b88755-qtx87     1/1    Running  0         3d
+reddit-test-ui-7d7fbdb6c9-frsdp       1/1    Running  0         2d16h
+reddit-test-ui-7d7fbdb6c9-pkjjt       1/1    Running  0         2d16h
+reddit-test-ui-7d7fbdb6c9-pmr5t       1/1    Running  0         2d16h
+
+==> v1/Secret
+NAME                 TYPE    DATA  AGE
+reddit-test-mongodb  Opaque  2     3d
+
+==> v1/PersistentVolumeClaim
+NAME                 STATUS  VOLUME                                    CAPACITY  ACCESS MODES  STORAGECLASS  AGE
+reddit-test-mongodb  Bound   pvc-5f5a472a-2623-11e9-a64f-42010a8402b4  8Gi       RWO           standard      3d
+
+==> v1/Service
+NAME                 TYPE       CLUSTER-IP    EXTERNAL-IP  PORT(S)         AGE
+reddit-test-comment  ClusterIP  10.7.240.172  <none>       9292/TCP        3d
+reddit-test-mongodb  ClusterIP  10.7.247.102  <none>       27017/TCP       3d
+reddit-test-post     ClusterIP  10.7.255.28   <none>       5000/TCP        3d
+reddit-test-ui       NodePort   10.7.253.33   <none>       9292:30990/TCP  3d
+
+==> v1beta2/Deployment
+NAME                 DESIRED  CURRENT  UP-TO-DATE  AVAILABLE  AGE
+reddit-test-comment  1        1        1           1          3d
+reddit-test-post     1        1        1           1          3d
+reddit-test-ui       3        3        3           3          3d
+
+==> v1beta1/Deployment
+NAME                 DESIRED  CURRENT  UP-TO-DATE  AVAILABLE  AGE
+reddit-test-mongodb  1        1        1           1          3d
+
+==> v1beta1/Ingress
+NAME                 HOSTS  ADDRESS         PORTS  AGE
+reddit-test-comment  *      80              3d
+reddit-test-post     *      80              3d
+reddit-test-ui       *      35.244.132.114  80  3d
+
+```
+Проверяем UI.
+```http
+
+   [1]Microservices Reddit in default reddit-test-ui-7d7fbdb6c9-pkjjt
+   container
+
+    1
+
+  [2]Работает!
+
+    01-02-2019
+    21:32
+
+   [3]Go to the link
+
+  Menu
+
+     * [4]All posts
+     * [5]New post
+
+References
+
+   Visible links
+   1. http://35.244.132.114/
+   2. http://35.244.132.114/post/5c54baee4406720014dab941
+   3. http://#/
+   4. http://35.244.132.114/
+   5. http://35.244.132.114/new
+```
+#### GitLab + Kubernetes
+
+Создаем  GKE-кластер
+
+Делаем новый пулузлов: 
+- bigpool 
+- 1 узел типаn n1-standard-2 (7,5 Гб, 2 виртуальныхЦП) 
+- Размердиска 40 Гб
+
+Устанавливаем  Gitlab  помощью Helm Chart’а из пакета Omnibus
+```bash
+$ helm repo add gitlab https://charts.gitlab.io
+```
+Качаем Chart
+```
+$ helm fetch gitlab/gitlab-omnibus --version 0.1.37 --untar
+$ cd gitlab-omnibus 
+```
+Правим yml  
+```yml
+gitlab-omnibus/values.yaml 
+---
+baseDomain: example.com
+legoEmail: you@example.com
+
+gitlab-omnibus/templates/gitlab/gitlab-svc.yaml 
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "fullname" . }}
+...
+   selector:
+    name: {{ template "fullname" . }}
+  ports:
+...
+    - name: prometheus
+      port: 9090
+      targetPort: prometheus
+    - name: web
+      port: 80
+      targetPort: workhorse
+
+gitlab-omnibus/templates/gitlab-config.yaml
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ template "fullname" . }}-config
+  labels:
+    app: {{ template "fullname" . }}
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    release: "{{ .Release.Name }}"
+    heritage: "{{ .Release.Service }}"
+data:
+  external_scheme: http
+  external_hostname: {{ template "fullname" . }}
+
+gitlab-omnibus/templates/ingress/gitlab-ingress.yaml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+...
+spec:
+  tls:
+...
+    rules:
+  - host: {{ template "fullname" . }}
+    http:
+      paths:
+```
+
+Устанавливаем gitlab
+```bash
+$ helm install --name gitlab . -f values.yaml   
+```
+Смотрим выданный IP-адрес ingress-контроллера nginx.
+```bash
+$ kubectl get service -n nginx-ingress nginx 
+
+NAME    TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                                   AGE
+nginx   LoadBalancer   10.23.255.237   35.246.112.70   80:31846/TCP,443:30749/TCP,22:30505/TCP   1d
+```
+Добавляем его в локальный файл /etc/hosts
+```
+echo "35.246.112.70 gitlab-gitlab staging production" >> /etc/hosts
+
+```
+Проверяем что gitlab поднялся
+```bash
+NAME                                        READY   STATUS    RESTARTS   AGE
+gitlab-gitlab-6654b8f4c5-hvmr8              1/1     Running   0          1d
+```
+Идем по адресу  http://gitlb-gitlab
+
+#### Запустим проект
+
+Создаем директорию Gitlab_ci со следующей структурой директорий
+```bash
+Gitlab_ci
+├── comment
+├── post
+├── reddit-deploy
+└── ui
+```
+Переносим исходные коды сервиса ui в Gitlab_ci/ui 
+
+```bash
+
+Gitlab_ci/ui/
+├── build_info.txt
+├── config.ru
+├── docker_build.sh
+├── Dockerfile
+├── Gemfile
+├── Gemfile.lock
+├── helpers.rb
+├── middleware.rb
+├── ui_app.rb
+├── VERSION
+└── views
+    ├── create.haml
+    ├── index.haml
+    ├── layout.haml
+    └── show.haml
+```
+В директории Gitlab_ci/ui:
+1) Инициализируем локальный git-репозиторий
+```bash
+$ git init 
+```
+2) Добавим удаленный репозиторий
+```bash
+$ git remote add origin http://gitlab-gitlab/verty/ui.git
+```
+3) Закоммитим и отправим в gitlab
+```bash
+$ git add .
+$ git commit -m “init”
+$ git push origin master
+```
+Делаем то же самое для post и comment.
+Переносим содержимое директории Charts (папки ui, post,
+comment, reddit) в Gitlab_ci/reddit-deploy 
+
+1) Создаем файл Gitlab_ci/ui/.gitlab-ci.yml
+
+```bash
+mage: alpine:latest
+
+stages:
+  - build
+  - test
+  - release
+  - cleanup
+
+build:
+  stage: build
+  image: docker:git
+  services:
+    - docker:dind
+  script:
+    - setup_docker
+    - build
+  variables:
+    DOCKER_DRIVER: overlay2
+  only:
+    - branches
+
+test:
+  stage: test
+  script:
+    - exit 0
+  only:
+    - branches
+
+release:
+  stage: release
+  image: docker
+  services:
+    - docker:dind
+  script:
+    - setup_docker
+    - release
+  only:
+    - master
+
+.auto_devops: &auto_devops |
+  [[ "$TRACE" ]] && set -x
+  export CI_REGISTRY="index.docker.io"
+  export CI_APPLICATION_REPOSITORY=$CI_REGISTRY/$CI_PROJECT_PATH
+  export CI_APPLICATION_TAG=$CI_COMMIT_REF_SLUG
+  export CI_CONTAINER_NAME=ci_job_build_${CI_JOB_ID}
+  export TILLER_NAMESPACE="kube-system"
+
+  function setup_docker() {
+    if ! docker info &>/dev/null; then
+      if [ -z "$DOCKER_HOST" -a "$KUBERNETES_PORT" ]; then
+        export DOCKER_HOST='tcp://localhost:2375'
+      fi
+    fi
+  }
+
+  function release() {
+
+    echo "Updating docker images ..."
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    docker pull "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    docker tag "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    docker push "$CI_APPLICATION_REPOSITORY:$(cat VERSION)"
+    echo ""
+  }
+
+  function build() {
+
+    echo "Building Dockerfile-based application..."
+    echo `git show --format="%h" HEAD | head -1` > build_info.txt
+    echo `git rev-parse --abbrev-ref HEAD` >> build_info.txt
+    docker build -t "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG" .
+
+    if [[ -n "$CI_REGISTRY_USER" ]]; then
+      echo "Logging to GitLab Container Registry with CI credentials..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      echo ""
+    fi
+
+    echo "Pushing to GitLab Container Registry..."
+    docker push "$CI_APPLICATION_REPOSITORY:$CI_APPLICATION_TAG"
+    echo ""
+  }
+
+before_script:
+  - *auto_devops
+```
+
+2) Комитем и запушим в gitlab
+3) В Pipeline работает
+
+Добавляем .gitlab-ci.yml в Post и Comment.
+Смотрим что сборка прошла успешно
+
+
+Дадим возможность разработчику запускать отдельное
+окружение в Kubernetes по коммиту в feature-бранч. 
+```yml
+
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+   name: {{ template "ui.fullname" }}
+   annotations:
+     kubernetes.io/ingress.class: {{ .Values.ingress.class }}  
+spec:
+  rules:
+  - host: {{ .Values.ingress.host | default .Release.Name }}    
+    http:
+     paths:
+     - path: /
+       backend:
+          serviceName: {{ template "ui.fullname" }}
+          servicePort: {{ .Values.service.externalPort }}  
+
+```
+Обновим конфиг ингресса для сервиса UI:
+```yml
+
+---
+service:
+  internalPort: 9292
+  externalPort: 9292
+
+image:
+  repository: verty/ui
+  tag: latest
+
+ingress:
+  class: nginx
+
+postHost:
+postPort:
+commentHost:
+commentPort:
+```
+
+Дадим возможность разработчику запускать отдельное
+окружение в Kubernetes по коммиту в feature-бранч. 
+
+1) Создадим новый бранч в репозитории ui
+```bash
+$ git checkout -b feature/3
+```
+2) Обновим ui/.gitlab-ci.yml файл 
+3) Закоммитим и запушем изменения
+```bash
+$ git commit -am "Add review feature"
+$ git push origin feature/3
+```
+Можем увидеть какие релизы запущены
+```bash
+
+NAME                    	REVISION	UPDATED                 	STATUS  	CHART                	APP VERSION	NAMESPACE
+gitlab                  	1       	Thu Feb  7 11:05:59 2019	DEPLOYED	gitlab-omnibus-0.1.37	           	default  
+review-verty-ui-f-nwgt56	1       	Fri Feb  8 13:40:01 2019	DEPLOYED	reddit-0.1.0         	           	review  
+```
+Созданные для таких целей окружения временны, их требуется
+“убивать”, когда они больше не нужны.
+ 
+Добавим в .gitlab-ci.yml
+```bash
+ 
+stop_review:
+  stage: cleanup
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - install_dependencies
+    - delete
+  environment:
+    name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+    action: stop
+  when: manual
+  allow_failure: true
+  only:
+    refs:
+    - branches
+    kubernetes: active
+  except:
+  - master
+
+```
+Добавим также
+```yml
+stages:
+  - build
+  - test
+  - review
+  - release
+  - cleanup
+review:
+  stage: review
+... 
+  environment:
+     name: review/$CI_PROJECT_PATH/$CI_COMMIT_REF_NAME
+     url: http://$CI_PROJECT_PATH_SLUG-$CI_COMMIT_REF_SLUG
+     on_stop: stop_review 
+```
+Добавим функцию удаления окружения 
+.auto_devops: &auto_devops |
+...
+  function delete() {
+    track="${1-stable}"
+    name="$CI_ENVIRONMENT_SLUG"
+    helm delete "$name" --purge || true
+}
+```
+Пушем измениения в git
+
+Заходим в Pipelines запускаем удаление окружения.
+```bash
+
+NAME  	REVISION	UPDATED                 	STATUS  	CHART                	APP VERSION	NAMESPACE
+gitlab	1       	Thu Feb  7 11:05:59 2019	DEPLOYED	gitlab-omnibus-0.1.37	           	default  
+```
+##### Теперь создадим staging и production среды для работы приложения
+Создадим файл reddit-deploy/.gitlab-ci.yml
+
+Пушим его в репозиторий  reddit-deploy  ветку master
+
+Смотрим что в helm также все видно
+```bash
+$ helm ls
+
+NAME      	REVISION	UPDATED                 	STATUS  	CHART                	NAMESPACE 
+gitlab    	1       	Mon Feb 11 10:28:08 2019	DEPLOYED	gitlab-omnibus-0.1.37	default   
+production	8       	Tue Feb 12 10:30:36 2019	DEPLOYED	reddit-0.1.0         	production
+staging   	10      	Tue Feb 12 10:37:35 2019	DEPLOYED	reddit-0.1.0         	staging   
+
+
+
